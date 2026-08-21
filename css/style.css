@@ -159,7 +159,6 @@ h1, h2, h3, h4 { font-weight: 800; }
 }
 .logo span { display: block; color: var(--logo-b); }
 .tagline { margin: 4px 0 16px; font-size: 15px; opacity: .82; }
-.credit { margin: 14px 0 0; font-size: 13px; opacity: .8; }
 .splash-foot {
   margin-top: 14px;
   display: flex;
