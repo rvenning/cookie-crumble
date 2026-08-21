@@ -7,15 +7,22 @@
 // engine returns a code so it can be asserted on without pinning a sentence
 // somebody will reword — and so the ones that just mean "nothing to do there"
 // stay silent instead of nagging.
+// Every refusal gets a word. A tap that does nothing and says nothing is what
+// makes a game feel broken, and in a busy shift most taps are refusals.
 const EXCUSES = {
   handsFull: "Your tray is full — serve something first!",
   emptyHanded: "You're not carrying anything yet.",
   taken: "Somebody's already at that table.",
   eating: "They're eating — let them enjoy it!",
   noPlate: "Nothing's ready at the pass yet.",
+  notReady: "Their order isn't ready — put a bench on!",
+  wrongDish: "That's not what they asked for.",
+  nobodyWaiting: "Nobody's at the door just now.",
+  nothingToDo: "Nothing to do there yet.",
   stationBusy: "That one's already going.",
   stationFull: "The pass is full — take some out first.",
   busy: "You've got enough lined up already.",
+  alreadyOn: "You're already on your way there.",
 };
 
 const App = {
@@ -183,7 +190,12 @@ const App = {
       : z.kind === "pass" ? Game.tapPass()
       : z.kind === "bin" ? Game.tapBin()
       : { ok: false, why: "unknown" };
-    if (res.ok) { Render.hit1(z.key); return; }
+    if (res.ok) { Render.hit1(z.key); GK.Sfx.pick(); return; }
+    // Never swallow a tap. A refusal that neither moves nor makes a sound is
+    // indistinguishable from a broken button, and in a busy shift most taps are
+    // refusals.
+    Render.bump(z.key);
+    GK.Sfx.nope();
     const words = EXCUSES[res.why];
     if (words) GK.UI.toast(words);
   },

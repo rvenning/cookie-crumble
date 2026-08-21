@@ -34,7 +34,7 @@ const Render = {
   cv: null, ctx: null, stage: null,
   W: 0, H: 0, s: 1, ox: 0, oy: 0, safeB: 0,
   down: null, hover: null,
-  clock: 0, flash: {}, pops: [], fretT: 0,
+  clock: 0, flash: {}, bumps: {}, pops: [], fretT: 0,
   trims: {},
 
   boot() {
@@ -160,7 +160,23 @@ const Render = {
   /* ---------------- events from the engine ---------------- */
 
   hit1(key, a = 0.4) { this.flash[key] = a; },
+  bump(key) { this.bumps[key] = 0.34; },
   pop(x, y, text, colour) { this.pops.push({ x, y, text, colour: colour || CREAM, t: 0 }); },
+
+  // Where each queued job is going, so "I tapped that and nothing happened" is
+  // answered on screen: the target wears the position it sits at in her list.
+  queuedMarks() {
+    const marks = [];
+    Game.server.tasks.forEach((k, i) => {
+      if (k.tableId != null) {
+        const t = Game.table(k.tableId);
+        if (t) marks.push({ x: t.x + 44, y: t.y - 30, n: i + 1, kind: k.kind });
+      } else if (k.kind === "collect") {
+        marks.push({ x: PASS.x0 + PASS.step * PASS.slots - 24, y: PASS.y - 22, n: i + 1, kind: k.kind });
+      }
+    });
+    return marks;
+  },
 
   /* ---------------- frame ---------------- */
 
@@ -169,6 +185,10 @@ const Render = {
     for (const k of Object.keys(this.flash)) {
       this.flash[k] -= dt * 2.2;
       if (this.flash[k] <= 0) delete this.flash[k];
+    }
+    for (const k of Object.keys(this.bumps)) {
+      this.bumps[k] -= dt;
+      if (this.bumps[k] <= 0) delete this.bumps[k];
     }
     for (let i = this.pops.length - 1; i >= 0; i--) {
       this.pops[i].t += dt;
@@ -208,9 +228,11 @@ const Render = {
     this.doorway(c);
     for (const t of Game.tables) this.table(c, t);
     this.queue(c);
+    this.trip(c);
     this.server(c);
     this.bin(c);
     this.bubbles(c);
+    this.marks(c);
     this.popsLayer(c);
     this.lit(c);
 
@@ -221,22 +243,66 @@ const Render = {
 
   wall(c) {
     const g = c.createLinearGradient(0, 0, 0, 175);
-    g.addColorStop(0, "#f7e3c6"); g.addColorStop(1, "#e8d0aa");
+    g.addColorStop(0, "#f9e8d0"); g.addColorStop(.7, "#eed6b2"); g.addColorStop(1, "#e2c69f");
     c.fillStyle = g; c.fillRect(0, 0, FIELD.w, 175);
-    c.fillStyle = "rgba(255,255,255,.32)";
+    c.fillStyle = "rgba(255,255,255,.3)";
     for (let x = 0; x < FIELD.w; x += 22) c.fillRect(x, 0, 3, 175);
+    // The wall casts down onto the counter, which is what stops the room reading
+    // as flat bands of colour.
+    const sh = c.createLinearGradient(0, 140, 0, 175);
+    sh.addColorStop(0, "rgba(94,58,24,0)"); sh.addColorStop(1, "rgba(94,58,24,.3)");
+    c.fillStyle = sh; c.fillRect(0, 140, FIELD.w, 35);
 
     // window, left
-    c.fillStyle = "#fffaf0"; this.round(c, 16, 26, 84, 76, 5); c.fill();
-    c.fillStyle = "#bfe2f0"; this.round(c, 22, 32, 72, 64, 3); c.fill();
-    c.fillStyle = "#9ec98d"; c.fillRect(22, 78, 72, 18);
-    c.fillStyle = "#fffaf0"; c.fillRect(56, 32, 5, 64); c.fillRect(22, 60, 72, 5);
-    c.strokeStyle = "#a97240"; c.lineWidth = 3; this.round(c, 16, 26, 84, 76, 5); c.stroke();
+    c.fillStyle = "#fffaf0"; this.round(c, 14, 24, 86, 78, 6); c.fill();
+    const sky = c.createLinearGradient(0, 30, 0, 96);
+    sky.addColorStop(0, "#cfeaf5"); sky.addColorStop(.6, "#a9d6ea"); sky.addColorStop(1, "#eaf6fb");
+    c.fillStyle = sky; this.round(c, 20, 30, 74, 66, 3); c.fill();
+    c.fillStyle = "#9ec98d";
+    c.beginPath(); c.arc(38, 100, 17, Math.PI, 0); c.fill();
+    c.beginPath(); c.arc(72, 102, 21, Math.PI, 0); c.fill();
+    c.fillStyle = "#fffaf0"; c.fillRect(54, 30, 5, 66); c.fillRect(20, 60, 74, 5);
+    c.strokeStyle = "#a97240"; c.lineWidth = 3.5; this.round(c, 14, 24, 86, 78, 6); c.stroke();
 
-    if (this.trims.pictures || this.trims.clock) {
-      c.font = "18px system-ui"; c.textAlign = "center"; c.textBaseline = "middle";
-      if (this.trims.pictures) c.fillText("🖼️", 128, 52);
-      if (this.trims.clock) c.fillText("🕰️", 152, 52);
+    // Daylight spilling in from the window onto the floor.
+    const beam = c.createLinearGradient(60, 100, 190, 320);
+    beam.addColorStop(0, "rgba(255,236,180,.4)"); beam.addColorStop(1, "rgba(255,236,180,0)");
+    c.fillStyle = beam;
+    c.beginPath(); c.moveTo(22, 100); c.lineTo(96, 100); c.lineTo(210, 330); c.lineTo(50, 330);
+    c.closePath(); c.fill();
+
+    // pictures on the picture rail
+    for (const [x, e] of [[126, "🥐"], [152, "🌿"]]) {
+      c.fillStyle = "#fffaf0"; this.round(c, x - 12, 34, 24, 28, 3); c.fill();
+      c.strokeStyle = "#a97240"; c.lineWidth = 3; this.round(c, x - 12, 34, 24, 28, 3); c.stroke();
+      c.font = "12px system-ui"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillText(e, x, 49);
+    }
+    if (this.trims.pictures) {
+      c.fillStyle = "#fffaf0"; this.round(c, 168, 38, 20, 22, 3); c.fill();
+      c.strokeStyle = "#a97240"; c.lineWidth = 3; this.round(c, 168, 38, 20, 22, 3); c.stroke();
+      c.font = "11px system-ui"; c.fillText("🌻", 178, 50);
+    }
+    if (this.trims.clock) {
+      c.font = "19px system-ui"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillText("🕰️", 206, 48);
+    }
+
+    // Two pendants over the room. Their glow is drawn on the floor, so the
+    // brightest part of the screen is the near tables — the ones you tap most.
+    for (const x of [104, 268]) {
+      c.strokeStyle = "#6b4523"; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 16); c.stroke();
+      const sg = c.createLinearGradient(0, 16, 0, 32);
+      sg.addColorStop(0, "#f6cd74"); sg.addColorStop(1, "#d99a2f");
+      c.fillStyle = sg;
+      c.beginPath(); c.moveTo(x - 17, 32); c.lineTo(x - 9, 16); c.lineTo(x + 9, 16); c.lineTo(x + 17, 32);
+      c.closePath(); c.fill();
+      c.fillStyle = "#fff3c4";
+      c.beginPath(); c.arc(x, 34, 4.5, 0, 7); c.fill();
+      const halo = c.createRadialGradient(x, 34, 2, x, 34, 30);
+      halo.addColorStop(0, "rgba(255,225,150,.6)"); halo.addColorStop(1, "rgba(255,225,150,0)");
+      c.fillStyle = halo; c.beginPath(); c.arc(x, 34, 30, 0, 7); c.fill();
     }
     if (this.trims.bunting) {
       c.strokeStyle = "#c08a4a"; c.lineWidth = 1.5;
@@ -255,16 +321,38 @@ const Render = {
   },
 
   counter(c) {
-    c.fillStyle = "#b8804a"; c.fillRect(0, 118, FIELD.w, 26);
-    c.fillStyle = "#e8cba0"; c.fillRect(0, 140, FIELD.w, 12);
-    c.fillStyle = "#fff0d6"; c.fillRect(0, 139, FIELD.w, 2.5);
-    c.fillStyle = "#a97240"; c.fillRect(0, 152, FIELD.w, 23);
+    const back = c.createLinearGradient(0, 118, 0, 144);
+    back.addColorStop(0, "#c08a52"); back.addColorStop(1, "#9a6738");
+    c.fillStyle = back; c.fillRect(0, 118, FIELD.w, 26);
+    const slab = c.createLinearGradient(0, 140, 0, 152);
+    slab.addColorStop(0, "#f0d5ac"); slab.addColorStop(1, "#cda877");
+    c.fillStyle = slab; c.fillRect(0, 140, FIELD.w, 12);
+    c.fillStyle = "#fff3de"; c.fillRect(0, 139, FIELD.w, 2.5);
+    const front = c.createLinearGradient(0, 152, 0, 175);
+    front.addColorStop(0, "#b07a45"); front.addColorStop(1, "#8a5a30");
+    c.fillStyle = front; c.fillRect(0, 152, FIELD.w, 23);
+    c.strokeStyle = "rgba(255,240,214,.2)"; c.lineWidth = 2;
+    this.round(c, 8, 157, FIELD.w - 16, 13, 4); c.stroke();
 
     c.font = "bold 8px 'Baloo 2', sans-serif"; c.textAlign = "left"; c.textBaseline = "middle";
-    c.fillStyle = "rgba(255,253,249,.85)"; c.fillText("THE PASS", 8, 128);
+    c.fillStyle = "#fffdf9"; c.fillText("THE PASS", 8, 128);
 
-    if (this.trims.stand) { c.font = "16px system-ui"; c.textAlign = "center"; c.fillText("🍰", 150, 130); }
-    if (this.trims.board) { c.font = "15px system-ui"; c.textAlign = "center"; c.fillText("📋", 168, 130); }
+    // A cake under a glass dome — the one bit of the counter that is pure
+    // set-dressing, and the thing that makes it read as a tearoom counter
+    // rather than a shelf.
+    const dx = 132;
+    c.fillStyle = "#f6d9a2"; this.round(c, dx - 14, 126, 28, 12, 3); c.fill();
+    c.fillStyle = "#f290a8"; this.round(c, dx - 14, 122, 28, 6, 3); c.fill();
+    const dome = c.createLinearGradient(dx - 18, 108, dx + 18, 140);
+    dome.addColorStop(0, "rgba(255,255,255,.55)"); dome.addColorStop(.45, "rgba(255,255,255,.12)");
+    dome.addColorStop(1, "rgba(255,255,255,.4)");
+    c.fillStyle = dome;
+    c.beginPath(); c.moveTo(dx - 19, 139); c.lineTo(dx - 19, 124);
+    c.arc(dx, 124, 19, Math.PI, 0); c.lineTo(dx + 19, 139); c.closePath(); c.fill();
+    c.strokeStyle = "rgba(255,255,255,.75)"; c.lineWidth = 1.6; c.stroke();
+
+    if (this.trims.stand) { c.font = "15px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("🍰", 168, 130); }
+    if (this.trims.board) { c.font = "14px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("📋", 22, 130); }
 
     // plates waiting
     Game.pass.forEach((p, k) => {
@@ -291,6 +379,15 @@ const Render = {
     const g = c.createLinearGradient(0, 175, 0, 300);
     g.addColorStop(0, "rgba(80,44,12,.3)"); g.addColorStop(1, "rgba(80,44,12,0)");
     c.fillStyle = g; c.fillRect(0, 175, FIELD.w, 125);
+
+    // Warm pools under the two pendants. Always on — this is the lighting the
+    // room is built around, not something you buy.
+    for (const x of [104, 268]) {
+      const p = c.createRadialGradient(x, 250, 6, x, 250, 132);
+      p.addColorStop(0, "rgba(255,222,158,.32)"); p.addColorStop(1, "rgba(255,222,158,0)");
+      c.fillStyle = p;
+      c.beginPath(); c.ellipse(x, 250, 132, 108, 0, 0, 7); c.fill();
+    }
 
     if (this.trims.rug) {
       c.fillStyle = "rgba(200,90,110,.35)";
@@ -327,13 +424,23 @@ const Render = {
   table(c, t) {
     const cloth = CLOTH[t.cloth].hex;
     const lit = this.down && this.hover && this.hover.key === `t${t.i}`;
+    const bump = this.bumps[`t${t.i}`];
+    if (bump) { c.save(); c.translate(Math.sin(bump * 60) * 4, 0); }
 
-    // shadow
-    c.fillStyle = "rgba(70,38,10,.26)";
-    c.beginPath(); c.ellipse(t.x, t.y + 26, 54, 13, 0, 0, 7); c.fill();
-    // chairs
-    c.fillStyle = "#8f5f30";
-    for (const dx of [-46, 46]) { this.round(c, t.x + dx - 13, t.y - 4, 26, 26, 7); c.fill(); }
+    // A soft shadow built from three stacked ellipses rather than a canvas
+    // blur filter, which is expensive per frame and behaves differently across
+    // browsers. Same look, no cost.
+    for (const [r, a] of [[62, .09], [56, .12], [50, .16]]) {
+      c.fillStyle = `rgba(70,38,10,${a})`;
+      c.beginPath(); c.ellipse(t.x, t.y + 27, r, r * 0.25, 0, 0, 7); c.fill();
+    }
+    // chairs, with a ledge so they sit on the floor
+    for (const dx of [-46, 46]) {
+      c.fillStyle = "#6f4720"; this.round(c, t.x + dx - 13, t.y + 1, 26, 26, 8); c.fill();
+      const cg = c.createLinearGradient(0, t.y - 4, 0, t.y + 22);
+      cg.addColorStop(0, "#a2703f"); cg.addColorStop(1, "#7f5528");
+      c.fillStyle = cg; this.round(c, t.x + dx - 13, t.y - 4, 26, 26, 8); c.fill();
+    }
 
     // Guests are drawn BEFORE the cloth, so the table overlaps their chins and
     // they read as sitting behind it rather than standing in front.
@@ -346,15 +453,18 @@ const Render = {
       }
     }
 
-    // cloth
-    const grd = c.createRadialGradient(t.x - 14, t.y - 4, 4, t.x, t.y + 4, 58);
-    grd.addColorStop(0, GK.util.shade(cloth, 34)); grd.addColorStop(1, cloth);
+    // The cloth: a solid colour ledge underneath, the cloth over it, and one
+    // soft highlight up on the top-left. Those three together are the whole
+    // difference between "flat" and "there".
+    c.fillStyle = GK.util.shade(cloth, -42);
+    c.beginPath(); c.ellipse(t.x, t.y + 13, 54, 22, 0, 0, 7); c.fill();
+    const grd = c.createRadialGradient(t.x - 16, t.y - 2, 4, t.x, t.y + 6, 60);
+    grd.addColorStop(0, GK.util.shade(cloth, 40)); grd.addColorStop(.62, cloth);
+    grd.addColorStop(1, GK.util.shade(cloth, -18));
     c.fillStyle = grd;
     c.beginPath(); c.ellipse(t.x, t.y + 8, 54, 22, 0, 0, 7); c.fill();
-    c.fillStyle = GK.util.shade(cloth, -40);
-    c.beginPath(); c.ellipse(t.x, t.y + 12, 54, 22, 0, 0, 7); c.fill();
-    c.fillStyle = grd;
-    c.beginPath(); c.ellipse(t.x, t.y + 8, 54, 22, 0, 0, 7); c.fill();
+    c.fillStyle = "rgba(255,255,255,.22)";
+    c.beginPath(); c.ellipse(t.x - 15, t.y + 1, 21, 7, -0.25, 0, 7); c.fill();
 
     // what is on the table
     if (t.state === "free") {
@@ -385,6 +495,7 @@ const Render = {
       c.lineWidth = lit ? 3 : 4;
       this.round(c, t.x - 58, t.y - 40, 116, 96, 12); c.stroke();
     }
+    if (bump) c.restore();
   },
 
   queue(c) {
@@ -423,6 +534,36 @@ const Render = {
         c.fillStyle = CREAM; c.beginPath(); c.arc(tx + dx, ty - 8, 7, 0, 7); c.fill();
         this.dish(c, tx + dx, ty - 8, 5, d);
       });
+    }
+  },
+
+  // The trip she is on, drawn as a dotted line. Half of "the controls feel bad"
+  // is not being able to see that a tap was heard — this makes the walk itself
+  // the feedback.
+  trip(c) {
+    const task = Game.server.tasks[0];
+    if (!task) return;
+    const leg = task.legs[task.leg];
+    if (!leg || leg.here) return;
+    c.save();
+    c.strokeStyle = "rgba(255,253,249,.75)"; c.lineWidth = 3;
+    c.setLineDash([2, 9]); c.lineCap = "round";
+    c.beginPath(); c.moveTo(Game.server.x, Game.server.y); c.lineTo(leg.x, leg.y); c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = "rgba(255,253,249,.8)";
+    c.beginPath(); c.arc(leg.x, leg.y, 4.5, 0, 7); c.fill();
+    c.restore();
+  },
+
+  // A numbered pip on anything she is queued to visit.
+  marks(c) {
+    for (const m of this.queuedMarks()) {
+      c.fillStyle = m.n === 1 ? "#ffd45e" : CREAM;
+      c.beginPath(); c.arc(m.x, m.y, 9, 0, 7); c.fill();
+      c.strokeStyle = INK; c.lineWidth = 2; c.stroke();
+      c.font = "bold 10px 'Baloo 2', sans-serif";
+      c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillStyle = INK; c.fillText(String(m.n), m.x, m.y + 0.5);
     }
   },
 

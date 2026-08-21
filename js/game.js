@@ -219,10 +219,34 @@ const Game = {
       if (this.selected.size > 3) return this.no("tooBig");
       return this.push("seat", t, { party: this.selected });
     }
+
+    // One tap seats the front of the queue. Requiring a guest to be picked out
+    // FIRST made the obvious action — tap the empty table — do nothing at all:
+    // 24 of 40 taps in a busy shift were rejected as "nothing to do", silently.
+    // Choosing WHO still works by tapping them first, which is what you do when
+    // you are hunting a colour match.
+    if (t.state === "free") {
+      if (!this.queue.length) return this.no("nobodyWaiting");
+      const p = this.queue[0];
+      if (p.size > 3) return this.no("tooBig");
+      return this.push("seat", t, { party: p });
+    }
+
     if (t.state === "seated") return this.push("order", t);
+
     if (t.state === "ordered") {
-      if (!this.server.carrying.length) return this.no("emptyHanded");
-      return this.push("serve", t);
+      if (this.server.carrying.some((d) => t.wants.includes(d))) return this.push("serve", t);
+      // Empty-handed but their food is sitting at the pass: go and get it, then
+      // bring it. Two taps for one obvious intention is one tap too many, and
+      // it still costs both walks.
+      const ready = this.pass.some((pl) => t.wants.includes(pl.dish));
+      if (ready && this.server.carrying.length < this.kit.carry
+          && this.server.tasks.length + 2 <= TASK_QUEUE
+          && !this.server.tasks.some((k) => k.kind === "collect")) {
+        const got = this.tapPass();
+        if (got.ok) return this.push("serve", t);
+      }
+      return this.no(this.server.carrying.length ? "wrongDish" : "notReady");
     }
     // Settling up and clearing are one trip. Two separate walks per party was
     // what made the whole campaign unservable.
@@ -499,11 +523,16 @@ const Game = {
     }
 
     if (task.kind === "collect") {
-      // ONLY what somebody is waiting for. Grabbing spare plates "because they
-      // fit" filled both hands with food nobody had ordered, and with no free
-      // hand she could not fetch what was actually wanted — a table would starve
-      // beside a full pass. A plate nobody asked for stays there and goes cold,
-      // which is the honest price of cooking the wrong thing.
+      // What somebody is waiting for, first. Grabbing every spare plate
+      // "because it fits" filled both hands with food nobody had ordered, and
+      // with no free hand she could not fetch what was wanted — a table starved
+      // beside a full pass.
+      //
+      // But she must never walk all the way there and come back EMPTY. Tapping
+      // the pass is an instruction, not a suggestion, and "I picked up the tea
+      // and she ignored me" is the worst thing a control can do. So if nothing
+      // on the pass is spoken for yet — you fetched before taking the order —
+      // she still brings ONE plate back. Wanted first, one spare at most.
       const need = this.outstanding();
       const took = [];
       for (let k = this.pass.length - 1; k >= 0; k--) {
@@ -512,6 +541,11 @@ const Game = {
         if (!need[p.dish]) continue;
         need[p.dish]--;
         this.pass.splice(k, 1);
+        this.server.carrying.push(p.dish);
+        took.push(p.dish);
+      }
+      if (!took.length && this.pass.length && this.server.carrying.length < this.kit.carry) {
+        const p = this.pass.shift();
         this.server.carrying.push(p.dish);
         took.push(p.dish);
       }

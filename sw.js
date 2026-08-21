@@ -6,7 +6,7 @@
 // BUMP THE CACHE NAME whenever any shell file below changes, or devices keep
 // serving the copy they already have and the fix never lands.
 
-const CACHE = "cookie-crumble-v4";
+const CACHE = "cookie-crumble-v5";
 
 const SHELL = [
   "./",
