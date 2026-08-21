@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-<title>Cookie Crumble 🍪 — Run the Cookie Shop</title>
+<title>Cookie Crumble 🫖 — Run the Tearoom</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#fff3dd">
-<meta name="description" content="Run a cookie shop: mix the dough, cut the shapes, catch the oven at just the right moment, ice them and sell them before anybody gives up waiting.">
+<meta name="theme-color" content="#ffd45e">
+<meta name="description" content="Run a village tearoom. Seat them, take the order, keep the benches going, and get the tea out before anybody gives up waiting.">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,18 +16,18 @@
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="lib/gk-base.css">
 <link rel="stylesheet" href="css/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍪</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🫖</text></svg>">
 </head>
 <body>
 
 <!-- Splash -->
 <div class="screen active" id="screen-splash">
   <div class="splash-inner">
-    <div class="splash-cookie" aria-hidden="true">🍪</div>
+    <div class="splash-cup" aria-hidden="true">🫖</div>
     <h1 class="logo">COOKIE<span>CRUMBLE</span></h1>
-    <p class="tagline">Mix it, bake it, ice it, sell it — before the queue gives up.</p>
+    <p class="tagline">Seat them, feed them, and keep everybody smiling.</p>
     <button class="btn big" id="btn-continue-as" style="display:none"></button>
-    <button class="btn big" id="btn-start" onclick="App.play()">🍪 Open the Shop</button>
+    <button class="btn big" id="btn-start" onclick="App.play()">🫖 Open the Tearoom</button>
     <button class="btn ghost" id="btn-install" style="display:none">📲 Add to Home Screen</button>
     <div class="splash-foot">
       <span id="sync-badge">…</span>
@@ -40,7 +40,7 @@
 <div class="screen" id="screen-profiles">
   <header class="bar">
     <button class="icon-btn" onclick="GK.UI.showScreen('splash')">←</button>
-    <h2>Who's baking?</h2>
+    <h2>Who's serving?</h2>
     <button class="btn-sound icon-btn">🔊</button>
   </header>
   <div class="profile-list" id="profile-list"></div>
@@ -55,25 +55,37 @@
   </header>
   <button class="btn big continue" id="btn-continue"></button>
   <div class="map-actions">
-    <button class="btn blue" onclick="App.showShop()">🛒 Corner Shop</button>
+    <button class="btn blue" onclick="App.showShop()">🛒 The Shop</button>
     <button class="btn blue" id="btn-rush" onclick="App.startRush()"></button>
+    <button class="btn blue" onclick="App.showAlbum()">🦊 Regulars</button>
     <button class="btn blue" onclick="App.showHelp()">❓ How to Play</button>
   </div>
   <div class="shift-list" id="shift-list"></div>
 </div>
 
-<!-- The Corner Shop: equipment on top, shop trims underneath -->
+<!-- The shop -->
 <div class="screen" id="screen-shop">
   <header class="bar">
     <button class="icon-btn" onclick="App.showMap()">←</button>
-    <h2>🛒 Corner Shop</h2>
+    <h2>🛒 The Shop</h2>
     <span class="hud coins">🪙 <b id="shop-coins">0</b></span>
   </header>
-  <p class="screen-hint">Coins come from selling cookies. Everything you buy is yours for good — and nothing here is ever needed to fill an order.</p>
+  <p class="screen-hint">Everything here buys you seconds — and nothing here is ever needed to serve an order.</p>
   <div class="shop-list" id="upgrade-list"></div>
-  <h3 class="trim-head">🪟 Shop Trims <span id="trim-count"></span></h3>
-  <p class="screen-hint">Just for fun — trims don't change the game.</p>
+  <h3 class="trim-head">🪟 Tearoom Trims <span id="trim-count"></span></h3>
+  <p class="screen-hint">Just for the look of the place. They go up in the room.</p>
   <div class="trim-grid" id="trim-grid"></div>
+</div>
+
+<!-- The regulars -->
+<div class="screen" id="screen-album">
+  <header class="bar">
+    <button class="icon-btn" onclick="App.showMap()">←</button>
+    <h2>🦊 The Regulars</h2>
+    <span class="hud" id="album-count"></span>
+  </header>
+  <p class="screen-hint">Serve enough of somebody and you'll get to know them.</p>
+  <div class="album-list" id="album-list"></div>
 </div>
 
 <!-- Leaderboard -->
@@ -83,7 +95,7 @@
     <h2>🏆 Family Leaderboard</h2>
     <button class="btn-sound icon-btn">🔊</button>
   </header>
-  <p class="screen-hint">Ranked by best takings in The Big Rush.</p>
+  <p class="screen-hint">Ranked by best takings in the Saturday Rush.</p>
   <div class="lb-rows" id="lb-rows"></div>
 </div>
 
@@ -94,12 +106,16 @@
     <span class="hud" id="hud-shift"></span>
     <span class="hud" id="hud-left"></span>
     <span class="hud sad" id="hud-lost"></span>
-    <span class="hud coins" id="hud-coins">🪙 0</span>
-    <button class="icon-btn scraper" id="btn-scraper" style="display:none" aria-label="Icing scraper"></button>
   </header>
+  <div class="star-track" id="star-track">
+    <span class="st" id="st0">★</span><span class="st" id="st1">★</span><span class="st" id="st2">★</span>
+    <span class="track"><i id="star-fill"></i></span>
+    <span class="score" id="hud-score">0</span>
+  </div>
   <div class="stage" id="stage">
     <canvas id="cv"></canvas>
   </div>
+  <div class="dock" id="dock"></div>
 </div>
 
 <!-- Results -->
@@ -111,11 +127,10 @@
     <div class="res-score" id="res-score">0</div>
     <div class="res-stats">
       <div id="res-served"></div>
-      <div id="res-bake"></div>
       <div id="res-extra"></div>
     </div>
     <p class="res-next-star" id="res-next-star"></p>
-    <p class="res-finished" id="res-finished" style="display:none">👑 Twenty shifts, and the Bake-Off won! You're the best baker in the village — now try The Big Rush for takings the family can chase.</p>
+    <p class="res-finished" id="res-finished" style="display:none">👑 Twenty shifts and the Grand Re-Opening done! The tearoom is the talk of the village — now try the Saturday Rush for takings the family can chase.</p>
     <div class="res-actions">
       <button class="btn ghost" onclick="App.showMap()">🗺️ Map</button>
       <button class="btn" id="res-retry" style="display:none"></button>
@@ -124,13 +139,13 @@
   </div>
 </div>
 
-<!-- Today's shopping: step one of the original brief -->
-<div class="modal" id="modal-shopping">
+<!-- Opening up -->
+<div class="modal" id="modal-open">
   <div class="modal-box">
-    <h3>🛒 Today's Shopping</h3>
-    <div id="shop-list-body"></div>
-    <button class="btn green wide" onclick="App.confirmShopping()">Buy them and open up!</button>
-    <button class="btn grey wide" onclick="GK.UI.closeModal('modal-shopping')">Not yet</button>
+    <h3>🫖 Opening Up</h3>
+    <div id="open-body"></div>
+    <button class="btn green wide" onclick="App.confirmOpen()">Unlock the door!</button>
+    <button class="btn grey wide" onclick="GK.UI.closeModal('modal-open')">Not yet</button>
   </div>
 </div>
 
@@ -138,11 +153,9 @@
 <div class="modal" id="modal-pause">
   <div class="modal-box">
     <h3>⏸ Paused</h3>
-    <button class="btn green wide" onclick="App.resume()">▶️ Back to baking</button>
+    <button class="btn green wide" onclick="App.resume()">▶️ Back to work</button>
     <button class="btn blue wide" onclick="App.showHelp()">❓ How to Play</button>
-    <div class="modal-actions">
-      <button class="btn-sound icon-btn">🔊</button>
-    </div>
+    <div class="modal-actions"><button class="btn-sound icon-btn">🔊</button></div>
     <button class="btn grey wide" onclick="App.quit()">🗺️ Back to the map</button>
   </div>
 </div>
@@ -151,17 +164,17 @@
 <div class="modal" id="modal-help">
   <div class="modal-box">
     <h3>❓ How to Play</h3>
-    <p class="help-intro">Everything is a <b>tap</b>. Work up the screen: bench at the bottom, customers at the top.</p>
+    <p class="help-intro">Everything is one <b>tap</b>. You walk there and do it — and the walking is the only thing that costs you.</p>
     <ol class="help-steps">
-      <li>🥣 Tap the <b>bench</b> to mix a bowl of dough.</li>
-      <li>🍪 Tap a <b>cutter</b> to roll it out and cut the shape a customer asked for.</li>
-      <li>🔥 Tap an <b>oven shelf</b> to put the tray in.</li>
-      <li>⏲️ Watch the gauge. Take it out on the <b>green stripe</b> and it's perfect. Amber is a bit crispy. After that it's burnt.</li>
-      <li>🎨 Tap the <b>icing table</b>, then a colour — and sprinkles, if they asked.</li>
-      <li>🧑 Tap the <b>customer</b> whose card matches. They pay you!</li>
+      <li>🚪 Tap a guest at the <b>door</b>, then a <b>free table</b>. Matching the tablecloth to their colour pays a bonus.</li>
+      <li>❓ Tap a table showing <b>?</b> to take the order.</li>
+      <li>🫖 Tap the <b>benches</b> at the bottom to put the urn, the oven or the icing on. They cook while you're away.</li>
+      <li>🍽️ Tap <b>the pass</b> to load your tray with whatever's ready.</li>
+      <li>🍰 Tap the table it belongs to. Bring a whole order in <b>one trip</b> for extra points.</li>
+      <li>🪙 When they've finished, tap the table again — they pay up as you clear it.</li>
     </ol>
-    <p class="help-note"><b>Your hands hold one tray.</b> Park a tray on the 🧊 cooling rack when you need a free hand for the oven. Anything you don't want goes in the 🗑️ bin — nothing is ever wasted by mistake.</p>
-    <p class="help-note"><b>Stars:</b> one for finishing, two if nobody gives up waiting, three if most of them are baked just right.</p>
+    <p class="help-note"><b>Hearts</b> show how long somebody will wait. Do the same job twice in a row for a <b>chain bonus</b>. Anything you don't want goes in the 🗑️ bin — nothing is ever lost by mistake.</p>
+    <p class="help-note"><b>Stars</b> come from your score. The bar along the top shows how close you are.</p>
     <button class="btn green wide" onclick="GK.UI.closeModal('modal-help')">Got it!</button>
   </div>
 </div>
@@ -188,7 +201,7 @@
 </script>
 <script src="js/firebase-config.js"></script>
 <!-- data registries -->
-<script src="js/recipes.js"></script>
+<script src="js/menu.js"></script>
 <script src="js/shifts.js"></script>
 <script src="js/upgrades.js"></script>
 <!-- systems -->

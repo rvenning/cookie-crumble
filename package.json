@@ -2,10 +2,12 @@
   "name": "cookie-crumble",
   "version": "1.0.0",
   "private": true,
-  "description": "Run a cookie shop: mix, cut, bake it just right, ice it and sell it — a bright-kitchen game built on gamekit.",
+  "description": "Run a village tearoom: seat them, take the order, keep the benches going and get the tea out before anybody gives up waiting.",
   "scripts": {
     "test": "node --test",
-    "report": "cross-env-unavailable-use: CC_REPORT=1 node --test tests/bot.test.js",
+    "report": "CC_REPORT=1 node --test tests/bot.test.js",
+    "diag": "node tests/diag.js",
+    "calibrate": "node tests/calibrate.js",
     "icons": "node tools/make-icons.js"
   }
 }

@@ -18,7 +18,8 @@ const PROGRESS = {
     shifts: {},          // { [idx]: { stars, best } } — best result per shift
     upgrades: {},        // { [upgradeId]: level }
     trims: {},           // { [trimId]: 1 }
-    rushBest: 0,         // customers served in the longest Big Rush
+    met: {},             // { [guestId]: how many you have served — fills the album }
+    rushBest: 0,         // parties served in the longest Saturday Rush
     rushScore: 0,        // the leaderboard number
     updated: 0,
   }),
@@ -34,6 +35,10 @@ const PROGRESS = {
     const upgrades = { ...(a.upgrades || {}) };
     for (const [id, lvl] of Object.entries(b.upgrades || {}))
       upgrades[id] = Math.max(upgrades[id] || 0, lvl);
+    // How many of each guest she has served only ever goes up, so max() is
+    // right — and it means the album fills in from whichever device she played.
+    const met = { ...(a.met || {}) };
+    for (const [id, n] of Object.entries(b.met || {})) met[id] = Math.max(met[id] || 0, n);
 
     return {
       // Spread first, so a field a newer build added survives an older client's
@@ -43,7 +48,7 @@ const PROGRESS = {
       coinsSpent: Math.max(a.coinsSpent || 0, b.coinsSpent || 0),
       rushBest: Math.max(a.rushBest || 0, b.rushBest || 0),
       rushScore: Math.max(a.rushScore || 0, b.rushScore || 0),
-      shifts, upgrades,
+      shifts, upgrades, met,
       // A trim is never un-bought, so the union is always right.
       trims: { ...(a.trims || {}), ...(b.trims || {}) },
     };
@@ -93,6 +98,11 @@ Object.assign(Storage, {
   // next one.
   recordShift(profileId, result) {
     const prog = this.getProgress(profileId);
+
+    // Who she fed counts whether or not the shift went well — the album is a
+    // record of the room, not a reward for winning.
+    prog.met = prog.met || {};
+    for (const [id, n] of Object.entries(result.met || {})) prog.met[id] = (prog.met[id] || 0) + n;
 
     if (result.mode === "rush") {
       prog.rushBest = Math.max(prog.rushBest || 0, result.served || 0);

@@ -1,6 +1,5 @@
-// Shared sandbox loader. Every suite gets the same engine, in the same
-// concatenation order as index.html — a file that reads another's top-level
-// `const` crashes on load if the order drifts.
+// Shared sandbox loader. Same concatenation order as index.html — a file that
+// reads another's top-level `const` crashes on load if the order drifts.
 
 const path = require("node:path");
 const { loadScripts } = require("../lib/tools/test-harness.js");
@@ -13,25 +12,24 @@ function load() {
     files: [
       "tests/seed.js",
       "lib/gk-util.js",
-      "js/recipes.js",
+      "js/menu.js",
       "js/shifts.js",
       "js/upgrades.js",
       "js/game.js",
     ],
     exports: [
-      "SHAPES", "SHAPE", "ICINGS", "ICING", "OVEN", "STATION", "SPRINKLE_MULT",
-      "bakePhase", "bakeBands", "payFor", "bestPay", "dealOrders", "trayFills",
-      "sameOrder", "orderSeconds",
-      "WEEKS", "SHIFTS", "RUSH", "RUSH_UNLOCK_SHIFTS", "demandSeconds", "shiftsInWeek",
+      "CLOTHS", "CLOTH", "DISHES", "DISH", "STATIONS", "STATION", "JOB",
+      "GUESTS", "GUEST", "SCORE", "payout", "stationFor",
+      "FIELD", "PASS", "DOOR", "QUEUE_SLOTS", "SERVER_HOME", "SPOTS", "ROOMS",
+      "neighbours", "NEIGHBOUR_DIST", "WEEKS", "SHIFTS", "STAR_MULT",
+      "RUSH", "RUSH_UNLOCK_SHIFTS", "shiftsInWeek", "pressure",
       "UPGRADES", "TRIMS", "BASE_KIT", "upgradeLoadout", "upgradeLevel",
-      "Game", "CUT_TIME", "ICE_TIME", "SCORING",
+      "hasTrim", "trimCount", "ALBUM_AT", "metCount", "knowsGuest",
+      "Game", "PLATE_LIFE", "TASK_QUEUE", "DRAIN",
       "__reseed", "__rand",
     ],
     browser: true,
-    globals: {
-      performance: { now: () => 0 },
-      requestAnimationFrame() {},
-    },
+    globals: { performance: { now: () => 0 }, requestAnimationFrame() {} },
   });
 }
 

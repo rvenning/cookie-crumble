@@ -1,51 +1,41 @@
-// Cookie Crumble — the kitchen on a canvas, and all the input.
+// Cookie Crumble — the tearoom on a canvas, and all the input.
 //
-// The shop is drawn as five stacked bands and the production line runs UPWARD
-// through them: bench at the bottom where your thumb is, then the oven, then the
-// icing table, and the customers along the top. A tray physically climbs the
-// screen as it becomes a cookie, which is most of the tutorial.
+// One fixed logical room (FIELD, 360x620) scaled to whatever stage it gets, so
+// every device plays the identical floor — the leaderboard depends on that and
+// so does every balance number the bots produced.
 //
-// Everything is a TAP. No drags at all — a drag is fiddlier than a tap for a
-// small hand and there is nothing here a drag would express better. But taps
-// commit on LIFT, not on press: pointerdown lights a zone, sliding moves which
-// zone is lit, and only pointerup acts. A mis-aimed thumb costs a slide instead
-// of a burnt tray.
+// Everything is a TAP, and taps commit on LIFT: pointerdown lights a target,
+// sliding moves which one is lit, and only pointerup acts. A mis-aimed thumb
+// costs a slide rather than a wasted trip across the room.
 //
-// Bright crayon: flat fills, every edge stroked in the same near-black ink, no
-// gradients and no shadows.
+// The room is drawn back-to-front — wall, counter, floor, furniture, animals,
+// server, bubbles — so the depth reads without any z-sorting cleverness. Guests
+// are drawn BEFORE their tablecloth so they sit behind the table rather than
+// standing in front of it.
 
 const INK = "#2a211b";
-const PAPER = "#fffaf0";
-const WALL = "#ffe9c4";
-const WOOD = "#c98f4e";
-const WOOD_DK = "#a5713a";
-const OVEN_BODY = "#544840";
-const OVEN_GLOW = "#ff9b3d";
-const GREEN = "#5ec26a";
-const AMBER = "#ffb02e";
-const RED = "#e0503f";
-const PINK = "#ff8fbf";
+const CREAM = "#fffdf9";
 
-// Bake phase -> the biscuit's own colour, before any icing goes on.
-const BAKE_COLOUR = {
-  raw: "#f3e2c2",
-  perfect: null,          // the shape's own colour
-  crisp: "#a9702f",
-  burnt: "#4a3628",
+// Each animal is the same three parts — an ear shape, a head, a muzzle — so a
+// new regular is a palette swap plus one silhouette.
+const FUR = {
+  fox:      { coat: "#ea8f45", ear: "#e07f3a", tip: "#3a2415", muzzle: "#fff3e2", shape: "point" },
+  bear:     { coat: "#a97449", ear: "#9c6b42", tip: "#c99a6d", muzzle: "#e6c9a4", shape: "round" },
+  rabbit:   { coat: "#f6ece0", ear: "#efe2d2", tip: "#f2b3c0", muzzle: "#ffffff", shape: "long" },
+  badger:   { coat: "#efeae2", ear: "#5d5751", tip: "#3a352f", muzzle: "#ffffff", shape: "round", stripes: true },
+  hedge:    { coat: "#e8cfae", ear: "#8a6440", tip: "#6b4a2e", muzzle: "#f4e4cd", shape: "spike" },
+  mouse:    { coat: "#cbc4ba", ear: "#b9b2a8", tip: "#f0c3c9", muzzle: "#efe9e2", shape: "round" },
+  frog:     { coat: "#8fcf70", ear: "#7fbf62", tip: "#fdfbf6", muzzle: "#a8dd8c", shape: "eyes" },
+  owl:      { coat: "#c9975a", ear: "#b98a4e", tip: "#e8cfa4", muzzle: "#e8cfa4", shape: "point" },
+  squirrel: { coat: "#cf8b52", ear: "#c07a45", tip: "#f2ddc2", muzzle: "#f2ddc2", shape: "point" },
 };
 
 const Render = {
   cv: null, ctx: null, stage: null,
-  W: 0, H: 0, scale: 1, safeB: 0,
-  bands: null,
-  zones: [],
-
-  down: null,             // the zone the finger went down on
-  hover: null,            // the zone it is currently over
-  flash: {},              // zone key -> seconds of highlight left
-  shakeZone: null, shakeT: 0,
-  clock: 0,
-  fretT: 0,
+  W: 0, H: 0, s: 1, ox: 0, oy: 0, safeB: 0,
+  down: null, hover: null,
+  clock: 0, flash: {}, pops: [], fretT: 0,
+  trims: {},
 
   boot() {
     this.cv = document.getElementById("cv");
@@ -65,47 +55,44 @@ const Render = {
     document.addEventListener("gesturechange", (e) => e.preventDefault());
     remeasure();
 
-    const pos = (e) => {
+    const at = (e) => {
       const r = this.cv.getBoundingClientRect();
-      return { x: e.clientX - r.left, y: e.clientY - r.top };
+      return this.toLogical(e.clientX - r.left, e.clientY - r.top);
     };
-
     this.cv.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      const p = pos(e);
+      const p = at(e);
       // Set the gesture state BEFORE capturing: setPointerCapture throws
       // NotFoundError whenever the browser does not consider that pointer
-      // active, and `?.` does not protect you — the throw would take the rest
-      // of this handler with it and leave a half-built gesture.
-      this.down = this.hover = this.hitZone(p.x, p.y);
+      // active, and `?.` does not protect you — the throw escapes and takes the
+      // rest of this handler with it.
+      this.down = this.hover = this.hit(p.x, p.y);
       try { this.cv.setPointerCapture?.(e.pointerId); } catch {}
     }, { passive: false });
 
     this.cv.addEventListener("pointermove", (e) => {
       if (!this.down) return;
       // Never gate on e.pressure: it is ZERO for ordinary touch on iOS, so the
-      // obvious `if (e.pressure > 0)` guard silently drops every move of a real
-      // finger while working perfectly with a desktop mouse.
+      // obvious guard silently drops every move of a real finger.
       e.preventDefault();
-      const p = pos(e);
-      this.hover = this.hitZone(p.x, p.y);
+      const p = at(e);
+      this.hover = this.hit(p.x, p.y);
     }, { passive: false });
 
     this.cv.addEventListener("touchmove", (e) => {
       if (!this.down || !e.touches[0]) return;
       e.preventDefault();
       const r = this.cv.getBoundingClientRect();
-      this.hover = this.hitZone(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top);
+      const p = this.toLogical(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top);
+      this.hover = this.hit(p.x, p.y);
     }, { passive: false });
 
     this.cv.addEventListener("pointerup", (e) => {
-      const p = pos(e);
-      const z = this.hitZone(p.x, p.y);
-      const started = this.down;
+      const p = at(e);
+      const z = this.hit(p.x, p.y), started = this.down;
       this.down = this.hover = null;
-      if (z && started && z.key === started.key) App.tap(z.kind, z.arg, z.key);
+      if (z && started && z.key === started.key) App.tap(z);
     });
-
     this.cv.addEventListener("pointercancel", () => { this.down = this.hover = null; });
   },
 
@@ -120,556 +107,516 @@ const Render = {
 
     this.W = box.width; this.H = box.height;
     const dpr = window.devicePixelRatio || 1;
-    // BACKING STORE ONLY. The canvas takes its display size from
-    // `width:100%; height:100%` in the stylesheet — pinning an inline pixel
-    // size here looks equivalent and goes stale the instant anything reflows
-    // the stage.
+    // BACKING STORE ONLY. Display size comes from `width:100%;height:100%` in
+    // the stylesheet, which is what stops a retina canvas rendering dpr-times
+    // too big — an inline pixel size here goes stale the moment anything
+    // reflows the stage.
     this.cv.width = Math.round(this.W * dpr);
     this.cv.height = Math.round(this.H * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    this.scale = GK.util.clamp(this.W / 380, 0.7, 1.5);
     this.safeB = parseFloat(getComputedStyle(this.stage).getPropertyValue("--safe-b")) || 0;
-
     const h = this.H - this.safeB;
-    const cut = (a, b) => ({ y: h * a, h: h * (b - a) });
-    this.bands = {
-      counter: cut(0, 0.27),
-      table: cut(0.27, 0.46),
-      oven: cut(0.46, 0.67),
-      bench: cut(0.67, 0.86),
-      shelf: cut(0.86, 1.0),
-    };
-    this.layoutZones();
+    this.s = Math.min(this.W / FIELD.w, h / FIELD.h);
+    this.ox = (this.W - FIELD.w * this.s) / 2;
+    this.oy = (h - FIELD.h * this.s) / 2;
   },
 
-  // Rebuilt every frame's worth of state change rather than cached: the cutter
-  // palette only exists while there is dough on the bench, and the oven grows a
-  // shelf the moment one is bought.
-  layoutZones() {
-    this.zones = [];
-    if (!this.bands || !Game.shift) return;
-    const b = this.bands, S = this.scale, pad = 8 * S;
-    const add = (kind, arg, x, y, w, h, key) =>
-      this.zones.push({ kind, arg, x, y, w, h, key: key || `${kind}:${arg == null ? "" : arg}` });
+  toScreen(x, y) { return { x: this.ox + x * this.s, y: this.oy + y * this.s }; },
+  toLogical(x, y) { return { x: (x - this.ox) / this.s, y: (y - this.oy) / this.s }; },
 
-    // --- customers, along the top ---
-    const n = Game.shift.maxWaiting;
-    const cw = Math.min(126 * S, (this.W - pad * 2 - pad * (n - 1)) / n);
-    const cx0 = (this.W - (cw * n + pad * (n - 1))) / 2;
-    for (let i = 0; i < n; i++) {
-      const c = Game.counter[i];
-      if (!c) continue;
-      add("customer", c.id, cx0 + i * (cw + pad), b.counter.y + 6 * S, cw, b.counter.h - 14 * S);
-    }
+  /* ---------------- what is tappable ---------------- */
 
-    // --- the icing table: the tray on the left, the colours on the right ---
-    this.grid(b.table, "icing", () => {
-      if (!Game.table) return [];
-      const cols = Game.icings().filter((i) => i !== "none");
-      const cells = cols.map((id) => ({ kind: "icing", arg: id }));
-      if (Game.sprinklesOn()) cells.push({ kind: "sprinkles", arg: null });
-      return cells;
-    }, add);
-    add("table", null, pad, b.table.y + 6 * S, this.W * 0.28 - pad, b.table.h - 12 * S);
-
-    // --- the oven, one slot per shelf ---
-    const on = Game.ovens.length;
-    const ow = Math.min(150 * S, (this.W - pad * 2 - pad * (on - 1)) / on);
-    const ox0 = (this.W - (ow * on + pad * (on - 1))) / 2;
-    for (let i = 0; i < on; i++)
-      add("oven", i, ox0 + i * (ow + pad), b.oven.y + 5 * S, ow, b.oven.h - 10 * S);
-
-    // --- the bench: the bowl on the left, the cutters on the right ---
-    this.grid(b.bench, "cutter", () => (
-      Game.bench.state === "dough"
-        ? Game.shapes().map((id) => ({ kind: "cutter", arg: id }))
-        : []
-    ), add);
-    add("bench", null, pad, b.bench.y + 6 * S, this.W * 0.28 - pad, b.bench.h - 12 * S);
-
-    // --- the shelf: cooling rack, your hands, the bin ---
-    const rn = Game.rack.length;
-    const slots = rn + 2;                       // + hands + bin
-    const sw = (this.W - pad * 2 - 6 * S * (slots - 1)) / slots;
-    let sx = pad;
-    for (let i = 0; i < rn; i++) {
-      add("rack", i, sx, b.shelf.y + 3 * S, sw, b.shelf.h - 8 * S);
-      sx += sw + 6 * S;
-    }
-    add("hands", null, sx, b.shelf.y + 3 * S, sw, b.shelf.h - 8 * S); sx += sw + 6 * S;
-    add("bin", null, sx, b.shelf.y + 3 * S, sw, b.shelf.h - 8 * S);
-  },
-
-  // A 3-across palette filling the right ~72% of a band. Three columns keeps
-  // every button over 44px on a 320px phone; six across would not.
-  grid(band, _kind, cellsFn, add) {
-    const cells = cellsFn();
-    if (!cells.length) return;
-    const S = this.scale, pad = 8 * S;
-    const x0 = this.W * 0.28 + pad * 0.5;
-    const w = this.W - x0 - pad;
-    const cols = 3;
-    const rows = Math.ceil(cells.length / cols);
-    const gx = 5 * S, gy = 5 * S;
-    const cw = (w - gx * (cols - 1)) / cols;
-    const ch = (band.h - 12 * S - gy * (rows - 1)) / rows;
-    cells.forEach((c, i) => {
-      const r = Math.floor(i / cols), k = i % cols;
-      add(c.kind, c.arg, x0 + k * (cw + gx), band.y + 6 * S + r * (ch + gy), cw, ch);
+  zones() {
+    const out = [];
+    if (!Game.shift) return out;
+    for (const t of Game.tables)
+      out.push({ kind: "table", arg: t.i, key: `t${t.i}`, x: t.x - 58, y: t.y - 40, w: 116, h: 96 });
+    Game.queue.forEach((p, k) => {
+      const q = QUEUE_SLOTS[Math.min(k, QUEUE_SLOTS.length - 1)];
+      // Narrow enough that the two columns at the door never overlap — two
+      // guests sharing a tap target is a tap with no right answer.
+      out.push({ kind: "queue", arg: p.id, key: `q${p.id}`, x: q.x - 21, y: q.y - 30, w: 42, h: 58 });
     });
+    out.push({ kind: "pass", arg: null, key: "pass", x: PASS.x0 - 26, y: PASS.y - 26, w: PASS.step * PASS.slots + 12, h: 62 });
+    out.push({ kind: "bin", arg: null, key: "bin", x: FIELD.w - 54, y: FIELD.h - 62, w: 50, h: 56 });
+    return out;
   },
 
-  hitZone(x, y) {
-    // Last first: palettes are added after the station they sit beside, and the
-    // one on top should win.
-    for (let i = this.zones.length - 1; i >= 0; i--) {
-      const z = this.zones[i];
+  hit(x, y) {
+    const zs = this.zones();
+    for (let i = zs.length - 1; i >= 0; i--) {
+      const z = zs[i];
       if (x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h) return z;
     }
     return null;
   },
 
-  /* ---------------- engine events ---------------- */
+  centreOf(key) {
+    const z = this.zones().find((q) => q.key === key);
+    return z ? { x: z.x + z.w / 2, y: z.y + z.h / 2 } : { x: FIELD.w / 2, y: FIELD.h / 2 };
+  },
 
-  hit(key, amount = 0.35) { this.flash[key] = amount; },
+  /* ---------------- events from the engine ---------------- */
 
-  shake(key) { this.shakeZone = key; this.shakeT = 0.32; },
+  hit1(key, a = 0.4) { this.flash[key] = a; },
+  pop(x, y, text, colour) { this.pops.push({ x, y, text, colour: colour || CREAM, t: 0 }); },
 
   /* ---------------- frame ---------------- */
 
   update(dt) {
     this.clock += dt;
     for (const k of Object.keys(this.flash)) {
-      this.flash[k] -= dt;
+      this.flash[k] -= dt * 2.2;
       if (this.flash[k] <= 0) delete this.flash[k];
     }
-    if (this.shakeT > 0) this.shakeT = Math.max(0, this.shakeT - dt);
-
-    // A stage can resize with no resize event at all — the web font landing, a
-    // HUD row appearing, a banner rewrapping. Notice the drift here rather than
-    // hunting every cause.
-    if (this.stage) {
-      const b = this.stage.getBoundingClientRect();
-      if (b.width > 50 && b.height > 50 &&
-          (Math.abs(b.width - this.W) > 1 || Math.abs(b.height - this.H) > 1)) this.resize();
+    for (let i = this.pops.length - 1; i >= 0; i--) {
+      this.pops[i].t += dt;
+      if (this.pops[i].t > 1.1) this.pops.splice(i, 1);
     }
+    // A stage can resize with no resize event at all — a web font landing, a HUD
+    // row appearing. Notice the drift here rather than hunting every cause.
+    const b = this.stage && this.stage.getBoundingClientRect();
+    if (b && b.width > 50 && b.height > 50 &&
+        (Math.abs(b.width - this.W) > 1 || Math.abs(b.height - this.H) > 1)) this.resize();
 
     if (Game.running) {
-      this.layoutZones();
-      // A ticking sound for anybody about to give up, at most twice a second.
       this.fretT -= dt;
       if (this.fretT <= 0) {
-        const worried = Game.counter.some((c) => c.patience / c.patienceMax < 0.25);
-        if (worried) { GK.Sfx.fret(); this.fretT = 0.5; } else this.fretT = 0.2;
+        const worried = Game.queue.concat(Game.tables.map((t) => t.party).filter(Boolean))
+          .some((p) => p.patience / p.patienceMax < 0.22);
+        if (worried) { GK.Sfx.fret(); this.fretT = 0.62; } else this.fretT = 0.2;
       }
     }
   },
 
   render() {
-    const ctx = this.ctx;
-    if (!ctx || !this.W || !this.bands) return;
-    ctx.clearRect(0, 0, this.W, this.H);
-
-    // The shop itself, painted past the bands so nothing floats in a void.
-    ctx.fillStyle = WALL;
-    ctx.fillRect(0, 0, this.W, this.H);
-    this.tiles();
-
+    const c = this.ctx;
+    if (!c || !this.W) return;
+    c.clearRect(0, 0, this.W, this.H);
+    c.fillStyle = "#e2c69f";
+    c.fillRect(0, 0, this.W, this.H);
     if (!Game.shift) return;
-    this.drawCounter();
-    this.drawTable();
-    this.drawOven();
-    this.drawBench();
-    this.drawShelf();
 
-    // Whatever the finger is resting on, lit but not yet committed.
-    const lit = this.hover && this.down && this.hover.key === this.down.key ? this.hover : null;
-    if (lit) {
-      ctx.save();
-      ctx.strokeStyle = INK; ctx.lineWidth = 4 * this.scale;
-      this.roundRect(lit.x - 2, lit.y - 2, lit.w + 4, lit.h + 4, 12 * this.scale);
-      ctx.stroke();
-      ctx.restore();
+    c.save();
+    c.translate(this.ox, this.oy);
+    c.scale(this.s, this.s);
+
+    this.wall(c);
+    this.counter(c);
+    this.floor(c);
+    this.doorway(c);
+    for (const t of Game.tables) this.table(c, t);
+    this.queue(c);
+    this.server(c);
+    this.bin(c);
+    this.bubbles(c);
+    this.popsLayer(c);
+    this.lit(c);
+
+    c.restore();
+  },
+
+  /* ---------------- the room ---------------- */
+
+  wall(c) {
+    const g = c.createLinearGradient(0, 0, 0, 175);
+    g.addColorStop(0, "#f7e3c6"); g.addColorStop(1, "#e8d0aa");
+    c.fillStyle = g; c.fillRect(0, 0, FIELD.w, 175);
+    c.fillStyle = "rgba(255,255,255,.32)";
+    for (let x = 0; x < FIELD.w; x += 22) c.fillRect(x, 0, 3, 175);
+
+    // window, left
+    c.fillStyle = "#fffaf0"; this.round(c, 16, 26, 84, 76, 5); c.fill();
+    c.fillStyle = "#bfe2f0"; this.round(c, 22, 32, 72, 64, 3); c.fill();
+    c.fillStyle = "#9ec98d"; c.fillRect(22, 78, 72, 18);
+    c.fillStyle = "#fffaf0"; c.fillRect(56, 32, 5, 64); c.fillRect(22, 60, 72, 5);
+    c.strokeStyle = "#a97240"; c.lineWidth = 3; this.round(c, 16, 26, 84, 76, 5); c.stroke();
+
+    if (this.trims.pictures || this.trims.clock) {
+      c.font = "18px system-ui"; c.textAlign = "center"; c.textBaseline = "middle";
+      if (this.trims.pictures) c.fillText("🖼️", 128, 52);
+      if (this.trims.clock) c.fillText("🕰️", 152, 52);
+    }
+    if (this.trims.bunting) {
+      c.strokeStyle = "#c08a4a"; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(0, 12); c.quadraticCurveTo(FIELD.w / 2, 26, FIELD.w, 12); c.stroke();
+      const cols = ["#d9576f", "#2f8d86", "#c98d15", "#7f5fa4", "#3d84bd"];
+      for (let i = 0; i < 9; i++) {
+        const x = 22 + i * 38, y = 14 + Math.sin((i / 8) * Math.PI) * 11;
+        c.fillStyle = cols[i % cols.length];
+        c.beginPath(); c.moveTo(x - 6, y); c.lineTo(x + 6, y); c.lineTo(x, y + 13); c.closePath(); c.fill();
+      }
+    }
+
+    // dado
+    c.fillStyle = "#c98f57"; c.fillRect(0, 160, FIELD.w, 15);
+    c.fillStyle = "#8a5a30"; c.fillRect(0, 158, FIELD.w, 2.5);
+  },
+
+  counter(c) {
+    c.fillStyle = "#b8804a"; c.fillRect(0, 118, FIELD.w, 26);
+    c.fillStyle = "#e8cba0"; c.fillRect(0, 140, FIELD.w, 12);
+    c.fillStyle = "#fff0d6"; c.fillRect(0, 139, FIELD.w, 2.5);
+    c.fillStyle = "#a97240"; c.fillRect(0, 152, FIELD.w, 23);
+
+    c.font = "bold 8px 'Baloo 2', sans-serif"; c.textAlign = "left"; c.textBaseline = "middle";
+    c.fillStyle = "rgba(255,253,249,.85)"; c.fillText("THE PASS", 8, 128);
+
+    if (this.trims.stand) { c.font = "16px system-ui"; c.textAlign = "center"; c.fillText("🍰", 150, 130); }
+    if (this.trims.board) { c.font = "15px system-ui"; c.textAlign = "center"; c.fillText("📋", 168, 130); }
+
+    // plates waiting
+    Game.pass.forEach((p, k) => {
+      const x = PASS.x0 + k * PASS.step, y = PASS.y;
+      const cold = p.age > PLATE_LIFE - 6;
+      c.fillStyle = CREAM; c.beginPath(); c.arc(x, y, 15, 0, 7); c.fill();
+      c.strokeStyle = cold ? "#b4553f" : "#7a5029"; c.lineWidth = 2; c.stroke();
+      this.dish(c, x, y, 10, p.dish);
+      if (!cold) {
+        c.strokeStyle = "#ffd45e"; c.lineWidth = 2.5;
+        c.globalAlpha = 0.55 + 0.45 * Math.sin(this.clock * 5 + k);
+        c.beginPath(); c.arc(x, y, 19, 0, 7); c.stroke(); c.globalAlpha = 1;
+      }
+    });
+    const f = this.flash["pass"];
+    if (f) { c.fillStyle = `rgba(255,255,255,${Math.min(0.5, f)})`; c.fillRect(PASS.x0 - 26, PASS.y - 24, PASS.step * PASS.slots, 50); }
+  },
+
+  floor(c) {
+    for (let x = 0; x < FIELD.w; x += 30) {
+      c.fillStyle = (x / 30) % 2 ? "#cf9a5c" : "#d7a468";
+      c.fillRect(x, 175, 30, FIELD.h - 175);
+    }
+    const g = c.createLinearGradient(0, 175, 0, 300);
+    g.addColorStop(0, "rgba(80,44,12,.3)"); g.addColorStop(1, "rgba(80,44,12,0)");
+    c.fillStyle = g; c.fillRect(0, 175, FIELD.w, 125);
+
+    if (this.trims.rug) {
+      c.fillStyle = "rgba(200,90,110,.35)";
+      c.beginPath(); c.ellipse(FIELD.w / 2, 400, 130, 78, 0, 0, 7); c.fill();
+    }
+    if (this.trims.lamps) {
+      for (const x of [90, 270]) {
+        const lg = c.createRadialGradient(x, 210, 4, x, 210, 96);
+        lg.addColorStop(0, "rgba(255,220,150,.42)"); lg.addColorStop(1, "rgba(255,220,150,0)");
+        c.fillStyle = lg; c.beginPath(); c.arc(x, 210, 96, 0, 7); c.fill();
+      }
+    }
+    if (this.trims.plant) { c.font = "20px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("🪴", 22, 200); }
+    if (this.trims.flowers) { c.font = "13px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; }
+    if (this.trims.cat) {
+      c.font = "20px system-ui"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillText("🐈", 330, 205 + Math.sin(this.clock * 0.8) * 2);
+    }
+    if (this.trims.trophy) { c.font = "16px system-ui"; c.textAlign = "center"; c.fillText("🏆", 340, 130); }
+    if (this.trims.birds) { c.font = "16px system-ui"; c.textAlign = "center"; c.fillText("🐦", 300, 40); }
+  },
+
+  doorway(c) {
+    c.fillStyle = "rgba(120,72,26,.16)";
+    this.round(c, DOOR.x, DOOR.y, DOOR.w, DOOR.h, 10); c.fill();
+    c.setLineDash([6, 6]); c.strokeStyle = "rgba(255,240,214,.6)"; c.lineWidth = 2;
+    this.round(c, DOOR.x, DOOR.y, DOOR.w, DOOR.h, 10); c.stroke(); c.setLineDash([]);
+    c.font = "bold 8px 'Baloo 2', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = "#5a4326"; c.fillText("DOOR", DOOR.x + DOOR.w / 2, DOOR.y + 10);
+  },
+
+  /* ---------------- furniture and guests ---------------- */
+
+  table(c, t) {
+    const cloth = CLOTH[t.cloth].hex;
+    const lit = this.down && this.hover && this.hover.key === `t${t.i}`;
+
+    // shadow
+    c.fillStyle = "rgba(70,38,10,.26)";
+    c.beginPath(); c.ellipse(t.x, t.y + 26, 54, 13, 0, 0, 7); c.fill();
+    // chairs
+    c.fillStyle = "#8f5f30";
+    for (const dx of [-46, 46]) { this.round(c, t.x + dx - 13, t.y - 4, 26, 26, 7); c.fill(); }
+
+    // Guests are drawn BEFORE the cloth, so the table overlaps their chins and
+    // they read as sitting behind it rather than standing in front.
+    if (t.party) {
+      const g = GUEST[t.party.type];
+      const n = Math.min(3, t.party.size);
+      for (let k = 0; k < n; k++) {
+        const dx = (k - (n - 1) / 2) * 26;
+        this.animal(c, t.x + dx, t.y - 24, 15, g.animal);
+      }
+    }
+
+    // cloth
+    const grd = c.createRadialGradient(t.x - 14, t.y - 4, 4, t.x, t.y + 4, 58);
+    grd.addColorStop(0, GK.util.shade(cloth, 34)); grd.addColorStop(1, cloth);
+    c.fillStyle = grd;
+    c.beginPath(); c.ellipse(t.x, t.y + 8, 54, 22, 0, 0, 7); c.fill();
+    c.fillStyle = GK.util.shade(cloth, -40);
+    c.beginPath(); c.ellipse(t.x, t.y + 12, 54, 22, 0, 0, 7); c.fill();
+    c.fillStyle = grd;
+    c.beginPath(); c.ellipse(t.x, t.y + 8, 54, 22, 0, 0, 7); c.fill();
+
+    // what is on the table
+    if (t.state === "free") {
+      // On a cream card rather than straight onto the cloth: 9px lettering needs
+      // 4.5:1 and pale-on-rose only manages 3.8, so the label carries its own
+      // background instead of depending on the tablecloth it lands on.
+      c.fillStyle = "rgba(255,253,249,.92)";
+      this.round(c, t.x - 21, t.y, 42, 15, 7); c.fill();
+      c.font = "bold 9px 'Baloo 2', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillStyle = INK; c.fillText("FREE", t.x, t.y + 8);
+    }
+    if (t.has.length) t.has.forEach((d, k) => {
+      const dx = (k - (t.has.length - 1) / 2) * 22;
+      c.fillStyle = CREAM; c.beginPath(); c.arc(t.x + dx, t.y + 6, 10, 0, 7); c.fill();
+      this.dish(c, t.x + dx, t.y + 6, 7, d);
+    });
+    if (t.state === "dirty") {
+      c.fillStyle = "#8a5a30";
+      for (let k = 0; k < 5; k++) {
+        const a = k * 1.3 + t.i;
+        c.beginPath(); c.arc(t.x + Math.cos(a) * 26, t.y + 6 + Math.sin(a) * 9, 2.6, 0, 7); c.fill();
+      }
+    }
+
+    const f = this.flash[`t${t.i}`];
+    if (f || lit) {
+      c.strokeStyle = lit ? INK : `rgba(255,255,255,${Math.min(0.8, f)})`;
+      c.lineWidth = lit ? 3 : 4;
+      this.round(c, t.x - 58, t.y - 40, 116, 96, 12); c.stroke();
     }
   },
 
-  // A tiled wall behind everything, so the empty band above a short counter
-  // reads as a bakery rather than as a gap.
-  tiles() {
-    const ctx = this.ctx, s = 26 * this.scale;
-    ctx.save();
-    ctx.strokeStyle = "rgba(0,0,0,.05)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x < this.W; x += s) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.H); ctx.stroke(); }
-    for (let y = 0; y < this.H; y += s) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke(); }
-    ctx.restore();
+  queue(c) {
+    Game.queue.forEach((p, k) => {
+      const q = QUEUE_SLOTS[Math.min(k, QUEUE_SLOTS.length - 1)];
+      const g = GUEST[p.type];
+      const picked = Game.selected === p;
+      const lit = this.down && this.hover && this.hover.key === `q${p.id}`;
+      if (picked || lit) {
+        c.fillStyle = picked ? "rgba(255,212,94,.5)" : "rgba(255,255,255,.3)";
+        this.round(c, q.x - 28, q.y - 28, 56, 56, 12); c.fill();
+      }
+      c.fillStyle = CLOTH[p.cloth].hex;
+      this.round(c, q.x - 17, q.y + 14, 34, 6, 3); c.fill();
+      this.animal(c, q.x, q.y - 4, 16, g.animal);
+      this.hearts(c, q.x, q.y + 26, p);
+    });
   },
 
-  /* ---------------- the bands ---------------- */
+  server(c) {
+    const s = Game.server;
+    c.fillStyle = "rgba(70,38,10,.28)";
+    c.beginPath(); c.ellipse(s.x, s.y + 15, 20, 7, 0, 0, 7); c.fill();
+    this.animal(c, s.x, s.y, 19, "owl");
+    // apron
+    c.fillStyle = CREAM;
+    c.beginPath(); c.moveTo(s.x - 11, s.y + 12); c.quadraticCurveTo(s.x, s.y + 20, s.x + 11, s.y + 12);
+    c.lineTo(s.x + 8, s.y + 20); c.lineTo(s.x - 8, s.y + 20); c.closePath(); c.fill();
 
-  drawCounter() {
-    const ctx = this.ctx, b = this.bands.counter, S = this.scale;
-    // The shop counter the customers stand behind.
-    ctx.fillStyle = WOOD_DK;
-    ctx.fillRect(0, b.y + b.h - 8 * S, this.W, 8 * S);
-    ctx.fillStyle = INK;
-    ctx.fillRect(0, b.y + b.h - 10 * S, this.W, 2.5 * S);
+    if (s.carrying.length) {
+      const tx = s.x + 24, ty = s.y - 2;
+      c.fillStyle = "#e0c9a3"; this.round(c, tx - 13, ty - 5, 26, 10, 3); c.fill();
+      c.strokeStyle = "#8a5a30"; c.lineWidth = 1.5; this.round(c, tx - 13, ty - 5, 26, 10, 3); c.stroke();
+      s.carrying.forEach((d, k) => {
+        const dx = (k - (s.carrying.length - 1) / 2) * 12;
+        c.fillStyle = CREAM; c.beginPath(); c.arc(tx + dx, ty - 8, 7, 0, 7); c.fill();
+        this.dish(c, tx + dx, ty - 8, 5, d);
+      });
+    }
+  },
 
-    if (!Game.counter.length) {
-      this.label(this.W / 2, b.y + b.h / 2, "the shop is quiet…", 13 * S, "rgba(42,33,27,.45)");
-      return;
+  bin(c) {
+    const lit = this.down && this.hover && this.hover.key === "bin";
+    const x = FIELD.w - 29, y = FIELD.h - 34;
+    c.fillStyle = lit ? "#c9b393" : "#b7a184";
+    this.round(c, x - 18, y - 20, 36, 40, 7); c.fill();
+    c.strokeStyle = "#6f5335"; c.lineWidth = 2; this.round(c, x - 18, y - 20, 36, 40, 7); c.stroke();
+    c.font = "bold 8px 'Baloo 2', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = "#4a3524"; c.fillText("BIN", x, y + 2);
+  },
+
+  // Speech bubbles last, so nothing overlaps them.
+  bubbles(c) {
+    for (const t of Game.tables) {
+      if (!t.party) continue;
+      const y = t.y - 52;
+      if (t.state === "seated") this.bubble(c, t.x, y, (bc) => {
+        bc.font = "bold 15px 'Baloo 2', sans-serif"; bc.fillStyle = INK;
+        bc.textAlign = "center"; bc.textBaseline = "middle"; bc.fillText("?", t.x, y);
+      }, 26, t.party);
+      else if (t.state === "ordered") this.bubble(c, t.x, y, (bc) => {
+        t.wants.forEach((d, k) => {
+          const dx = (k - (t.wants.length - 1) / 2) * 20;
+          this.dish(bc, t.x + dx, y, 8, d);
+        });
+      }, Math.max(26, t.wants.length * 20 + 8), t.party);
+      else if (t.state === "eating") this.bubble(c, t.x, y, (bc) => {
+        bc.font = "13px system-ui"; bc.textAlign = "center"; bc.textBaseline = "middle";
+        bc.fillText("😊", t.x, y);
+      }, 26, t.party);
+      else if (t.state === "bill") this.bubble(c, t.x, y, (bc) => {
+        bc.font = "bold 12px 'Baloo 2', sans-serif"; bc.textAlign = "center"; bc.textBaseline = "middle";
+        bc.fillStyle = "#7a5200"; bc.fillText("🪙", t.x, y);
+      }, 26, t.party, "#ffd45e");
+    }
+  },
+
+  bubble(c, x, y, draw, w, party, fill) {
+    c.fillStyle = fill || CREAM;
+    this.round(c, x - w / 2, y - 15, w, 30, 9); c.fill();
+    c.beginPath(); c.moveTo(x - 6, y + 14); c.lineTo(x + 6, y + 14); c.lineTo(x, y + 21); c.closePath(); c.fill();
+    draw(c);
+    if (party) this.hearts(c, x, y - 22, party);
+  },
+
+  hearts(c, x, y, p) {
+    const n = Math.max(0, Math.ceil((p.patience / p.patienceMax) * 3));
+    const worried = n <= 1;
+    for (let k = 0; k < 3; k++) {
+      c.fillStyle = k < n ? (worried ? "#e0503f" : "#e0546c") : "rgba(70,38,10,.22)";
+      const hx = x + (k - 1) * 9;
+      const sc = k < n && worried ? 1 + Math.sin(this.clock * 9) * 0.16 : 1;
+      c.save(); c.translate(hx, y); c.scale(sc, sc);
+      c.beginPath();
+      c.moveTo(0, 3.4); c.bezierCurveTo(-4.6, -0.8, -3.2, -4.2, 0, -1.8);
+      c.bezierCurveTo(3.2, -4.2, 4.6, -0.8, 0, 3.4); c.fill();
+      c.restore();
+    }
+  },
+
+  popsLayer(c) {
+    c.textAlign = "center"; c.textBaseline = "middle";
+    for (const p of this.pops) {
+      const a = 1 - p.t / 1.1;
+      c.globalAlpha = Math.max(0, a);
+      c.font = "bold 14px 'Baloo 2', sans-serif";
+      c.lineWidth = 3; c.strokeStyle = "rgba(60,36,12,.65)";
+      c.strokeText(p.text, p.x, p.y - p.t * 28);
+      c.fillStyle = p.colour; c.fillText(p.text, p.x, p.y - p.t * 28);
+    }
+    c.globalAlpha = 1;
+  },
+
+  // Whatever the finger is resting on, lit but not yet committed.
+  lit(c) {
+    if (!this.down || !this.hover || this.hover.key !== this.down.key) return;
+    const z = this.hover;
+    if (z.kind === "table" || z.kind === "queue") return;   // drawn in place already
+    c.strokeStyle = INK; c.lineWidth = 3;
+    this.round(c, z.x, z.y, z.w, z.h, 10); c.stroke();
+  },
+
+  /* ---------------- little drawings ---------------- */
+
+  animal(c, x, y, r, kind) {
+    const f = FUR[kind] || FUR.rabbit;
+    c.save(); c.translate(x, y);
+
+    if (f.shape === "point") {
+      c.fillStyle = f.ear;
+      for (const sx of [-1, 1]) {
+        c.beginPath(); c.moveTo(sx * r * 0.62, -r * 0.5); c.lineTo(sx * r * 0.85, -r * 1.35);
+        c.lineTo(sx * r * 0.15, -r * 0.85); c.closePath(); c.fill();
+      }
+    } else if (f.shape === "round") {
+      c.fillStyle = f.ear;
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.72, -r * 0.72, r * 0.4, 0, 7); c.fill(); }
+      c.fillStyle = f.tip;
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.72, -r * 0.72, r * 0.21, 0, 7); c.fill(); }
+    } else if (f.shape === "long") {
+      c.fillStyle = f.ear;
+      for (const sx of [-1, 1]) { c.beginPath(); c.ellipse(sx * r * 0.42, -r * 1.05, r * 0.24, r * 0.62, 0, 0, 7); c.fill(); }
+      c.fillStyle = f.tip;
+      for (const sx of [-1, 1]) { c.beginPath(); c.ellipse(sx * r * 0.42, -r * 1.0, r * 0.12, r * 0.42, 0, 0, 7); c.fill(); }
+    } else if (f.shape === "spike") {
+      c.fillStyle = f.tip;
+      c.beginPath();
+      for (let k = 0; k <= 8; k++) {
+        const a = Math.PI + (k / 8) * Math.PI;
+        const rr = k % 2 ? r * 1.24 : r * 0.98;
+        c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr * 0.92);
+      }
+      c.closePath(); c.fill();
     }
 
-    for (const z of this.zones) {
-      if (z.kind !== "customer") continue;
-      const c = Game.counter.find((x) => x.id === z.arg);
-      if (!c) continue;
-      this.drawOrderCard(z, c);
+    c.fillStyle = f.coat; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill();
+
+    if (f.stripes) {
+      c.fillStyle = f.tip;
+      for (const sx of [-1, 1]) {
+        c.beginPath(); c.ellipse(sx * r * 0.52, -r * 0.06, r * 0.2, r * 0.84, 0, 0, 7); c.fill();
+      }
     }
+    if (f.shape === "eyes") {
+      c.fillStyle = f.ear;
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.56, -r * 0.72, r * 0.42, 0, 7); c.fill(); }
+      c.fillStyle = "#fdfbf6";
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.56, -r * 0.72, r * 0.24, 0, 7); c.fill(); }
+      c.fillStyle = "#1d1a16";
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.56, -r * 0.7, r * 0.12, 0, 7); c.fill(); }
+    }
+
+    c.fillStyle = f.muzzle;
+    c.beginPath(); c.ellipse(0, r * 0.36, r * 0.54, r * 0.4, 0, 0, 7); c.fill();
+
+    if (kind === "owl") {
+      c.fillStyle = "#fdfbf6";
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.34, -r * 0.16, r * 0.34, 0, 7); c.fill(); }
+      c.fillStyle = "#241a11";
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.34, -r * 0.16, r * 0.18, 0, 7); c.fill(); }
+      c.fillStyle = "#e8a33c";
+      c.beginPath(); c.moveTo(0, r * 0.06); c.lineTo(-r * 0.15, r * 0.3); c.lineTo(r * 0.15, r * 0.3); c.closePath(); c.fill();
+    } else if (f.shape !== "eyes") {
+      c.fillStyle = "#2c1b0f";
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.32, -r * 0.14, r * 0.14, 0, 7); c.fill(); }
+      c.fillStyle = "#fff";
+      for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * r * 0.32 + r * 0.05, -r * 0.2, r * 0.05, 0, 7); c.fill(); }
+      c.fillStyle = "#2c1b0f";
+      c.beginPath(); c.ellipse(0, r * 0.24, r * 0.13, r * 0.1, 0, 0, 7); c.fill();
+    }
+    c.restore();
   },
 
-  drawOrderCard(z, c) {
-    const ctx = this.ctx, S = this.scale;
-    const frac = GK.util.clamp(c.patience / c.patienceMax, 0, 1);
-    const worried = frac < 0.25;
-    const nudge = worried ? Math.sin(this.clock * 14) * 1.6 * S : 0;
-
-    ctx.save();
-    ctx.translate(nudge, 0);
-    this.panel(z.x, z.y, z.w, z.h, PAPER, this.flash[z.key] ? 0.5 : 0);
-
-    // A face, so who is waiting is a person rather than a slot.
-    const faces = ["🧑", "👵", "🧒", "👨", "👩", "🧓", "👧", "👦"];
-    ctx.font = `${Math.round(22 * S)}px system-ui`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(faces[c.id % faces.length], z.x + z.w / 2, z.y + 20 * S);
-
-    // The cookie they asked for, drawn exactly as a finished tray would be.
-    const r = Math.min(z.w * 0.24, (z.h - 58 * S) * 0.5);
-    this.drawCookie(z.x + z.w / 2, z.y + 40 * S + r, r,
-      c.order.shape, c.order.icing, c.order.sprinkles, "perfect");
-
-    // ...and named underneath, because reading is content here, never a gate:
-    // the picture alone is always enough to fill the order.
-    const ic = ICING[c.order.icing];
-    const words = (c.order.icing === "none" ? "plain" : ic.name.toLowerCase())
-      + " " + SHAPE[c.order.shape].name.toLowerCase() + (c.order.sprinkles ? " ✨" : "");
-    this.label(z.x + z.w / 2, z.y + z.h - 20 * S, words, 10.5 * S, INK);
-
-    // How long they will stand there.
-    const bw = z.w - 16 * S, bx = z.x + 8 * S, by = z.y + z.h - 11 * S;
-    ctx.fillStyle = "rgba(42,33,27,.16)";
-    this.roundRect(bx, by, bw, 6 * S, 3 * S); ctx.fill();
-    ctx.fillStyle = frac > 0.5 ? GREEN : frac > 0.25 ? AMBER : RED;
-    this.roundRect(bx, by, Math.max(2, bw * frac), 6 * S, 3 * S); ctx.fill();
-    ctx.restore();
-  },
-
-  drawTable() {
-    const ctx = this.ctx, b = this.bands.table, S = this.scale;
-    const z = this.zones.find((x) => x.kind === "table");
-    if (!z) return;
-
-    this.panel(z.x, z.y, z.w, z.h, PAPER, this.flash["table:"] ? 0.5 : 0);
-    this.label(z.x + z.w / 2, z.y + 12 * S, "ICING", 10 * S, "rgba(42,33,27,.5)");
-
-    if (Game.table) {
-      const t = Game.table.tray;
-      const r = Math.min(z.w * 0.3, z.h * 0.26);
-      this.drawTray(z.x + z.w / 2, z.y + z.h * 0.58, r, t);
-      if (Game.table.icingT > 0) this.label(z.x + z.w / 2, z.y + z.h - 10 * S, "…", 14 * S, INK);
+  dish(c, x, y, r, id) {
+    const d = DISH[id];
+    if (!d) return;
+    if (d.icon === "tea") {
+      c.fillStyle = "#fdfbf6"; this.round(c, x - r * 0.8, y - r * 0.6, r * 1.5, r * 1.3, r * 0.3); c.fill();
+      c.fillStyle = "#7fb8c9"; this.round(c, x - r * 0.8, y - r * 0.6, r * 1.5, r * 0.4, r * 0.2); c.fill();
+      c.strokeStyle = "#cdbfa8"; c.lineWidth = r * 0.24;
+      c.beginPath(); c.arc(x + r * 0.9, y, r * 0.34, -1.2, 1.2); c.stroke();
+    } else if (d.icon === "cake") {
+      c.fillStyle = "#e8c88e"; this.round(c, x - r * 0.85, y - r * 0.1, r * 1.7, r * 0.95, r * 0.2); c.fill();
+      c.fillStyle = "#f290a8";
+      c.beginPath(); c.moveTo(x - r * 0.85, y - r * 0.1);
+      c.quadraticCurveTo(x - r * 0.4, y - r * 0.75, x, y - r * 0.1);
+      c.quadraticCurveTo(x + r * 0.45, y - r * 0.75, x + r * 0.85, y - r * 0.1);
+      c.closePath(); c.fill();
+      c.fillStyle = "#e0546c"; c.beginPath(); c.arc(x, y - r * 0.68, r * 0.2, 0, 7); c.fill();
+    } else if (d.icon === "scone") {
+      c.fillStyle = "#e3b678";
+      c.beginPath(); c.moveTo(x - r * 0.85, y + r * 0.35);
+      c.quadraticCurveTo(x, y - r * 1.0, x + r * 0.85, y + r * 0.35); c.closePath(); c.fill();
+      c.fillStyle = "#f6efe2"; this.round(c, x - r * 0.9, y + r * 0.25, r * 1.8, r * 0.34, r * 0.16); c.fill();
+      c.fillStyle = "#e3b678"; this.round(c, x - r * 0.9, y + r * 0.52, r * 1.8, r * 0.32, r * 0.14); c.fill();
     } else {
-      ctx.font = `${Math.round(26 * S)}px system-ui`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.globalAlpha = 0.4;
-      ctx.fillText("🎨", z.x + z.w / 2, z.y + z.h * 0.58);
-      ctx.globalAlpha = 1;
-    }
-
-    for (const p of this.zones) {
-      if (p.kind === "icing") {
-        const ic = ICING[p.arg];
-        const on = Game.table && Game.table.tray.icing === p.arg;
-        this.panel(p.x, p.y, p.w, p.h, ic.swatch, this.flash[p.key] ? 0.6 : 0, on ? 4.5 : 3);
-        this.label(p.x + p.w / 2, p.y + p.h / 2, ic.name, 11 * S, INK);
-      } else if (p.kind === "sprinkles") {
-        const on = Game.table && Game.table.tray.sprinkles;
-        this.panel(p.x, p.y, p.w, p.h, on ? "#ffe9a8" : PAPER, this.flash[p.key] ? 0.6 : 0, on ? 4.5 : 3);
-        this.label(p.x + p.w / 2, p.y + p.h / 2, "✨ sprinkles", 10.5 * S, INK);
+      c.fillStyle = "#d99a52"; c.beginPath(); c.arc(x, y, r * 0.92, 0, 7); c.fill();
+      c.fillStyle = "#5b3a24";
+      for (const [dx, dy] of [[-0.34, -0.28], [0.34, -0.1], [-0.1, 0.4]]) {
+        c.beginPath(); c.arc(x + dx * r, y + dy * r, r * 0.18, 0, 7); c.fill();
       }
     }
   },
 
-  drawOven() {
-    const ctx = this.ctx, b = this.bands.oven, S = this.scale;
-    for (const z of this.zones) {
-      if (z.kind !== "oven") continue;
-      const o = Game.ovens[z.arg];
-      const baking = !!o.tray;
-
-      this.panel(z.x, z.y, z.w, z.h, OVEN_BODY, this.flash[z.key] ? 0.45 : 0);
-
-      // The door: a warm window when something is in it.
-      const dx = z.x + 7 * S, dy = z.y + 7 * S, dw = z.w - 14 * S, dh = z.h * 0.5;
-      ctx.fillStyle = baking ? OVEN_GLOW : "#3a322c";
-      this.roundRect(dx, dy, dw, dh, 7 * S); ctx.fill();
-      ctx.strokeStyle = INK; ctx.lineWidth = 3 * S;
-      this.roundRect(dx, dy, dw, dh, 7 * S); ctx.stroke();
-
-      if (baking) {
-        const r = Math.min(dw * 0.15, dh * 0.34);
-        this.drawTray(dx + dw / 2, dy + dh * 0.52, r, o.tray, true);
-        this.drawGauge(z, o);
-      } else {
-        this.label(dx + dw / 2, dy + dh / 2, "empty", 11 * S, "rgba(255,250,240,.6)");
-        this.label(z.x + z.w / 2, z.y + z.h - 12 * S, "OVEN", 10 * S, "rgba(255,250,240,.55)");
-      }
-    }
-  },
-
-  // The bake gauge. The green stripe drawn here IS bakeBands() — the same
-  // function game.js judges with — so what she is aiming at and what she is
-  // graded on cannot drift apart.
-  drawGauge(z, o) {
-    const ctx = this.ctx, S = this.scale;
-    const bands = bakeBands(o.tray.shape, Game.kit.timer);
-    const total = bands.crispEnd * 1.06;
-    const gx = z.x + 8 * S, gw = z.w - 16 * S;
-    const gy = z.y + z.h * 0.62, gh = 13 * S;
-    const at = (t) => gx + gw * GK.util.clamp(t / total, 0, 1);
-
-    ctx.fillStyle = "#e9dcc6";
-    this.roundRect(gx, gy, gw, gh, 4 * S); ctx.fill();
-    ctx.fillStyle = GREEN;
-    ctx.fillRect(at(bands.start), gy, at(bands.perfectEnd) - at(bands.start), gh);
-    ctx.fillStyle = AMBER;
-    ctx.fillRect(at(bands.perfectEnd), gy, at(bands.crispEnd) - at(bands.perfectEnd), gh);
-    ctx.fillStyle = "#4a3628";
-    ctx.fillRect(at(bands.crispEnd), gy, gx + gw - at(bands.crispEnd), gh);
-    ctx.strokeStyle = INK; ctx.lineWidth = 2.5 * S;
-    this.roundRect(gx, gy, gw, gh, 4 * S); ctx.stroke();
-
-    // The needle.
-    const nx = at(o.tray.bakeT);
-    ctx.fillStyle = PAPER; ctx.strokeStyle = INK; ctx.lineWidth = 2.5 * S;
-    ctx.beginPath();
-    ctx.moveTo(nx, gy - 5 * S); ctx.lineTo(nx + 4.5 * S, gy - 12 * S);
-    ctx.lineTo(nx - 4.5 * S, gy - 12 * S); ctx.closePath();
-    ctx.fill(); ctx.stroke();
-
-    if (o.phase === "perfect") this.label(z.x + z.w / 2, z.y + z.h - 10 * S, "READY!", 12 * S, "#b8ffcb");
-    else if (o.phase === "crisp") this.label(z.x + z.w / 2, z.y + z.h - 10 * S, "getting dark…", 11 * S, "#ffd79a");
-    else if (o.phase === "burnt") this.label(z.x + z.w / 2, z.y + z.h - 10 * S, "burnt 😞", 11 * S, "#ffb3a8");
-  },
-
-  drawBench() {
-    const ctx = this.ctx, S = this.scale;
-    const z = this.zones.find((x) => x.kind === "bench");
-    if (!z) return;
-
-    this.panel(z.x, z.y, z.w, z.h, WOOD, this.flash["bench:"] ? 0.5 : 0);
-    const st = Game.bench.state;
-    const cx = z.x + z.w / 2, cy = z.y + z.h * 0.52;
-
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    if (st === "empty") {
-      ctx.font = `${Math.round(28 * S)}px system-ui`;
-      ctx.fillText("🥣", cx, cy);
-      this.label(cx, z.y + z.h - 11 * S, "tap to mix", 10.5 * S, INK);
-    } else if (st === "mixing") {
-      const wob = Math.sin(this.clock * 18) * 3 * S;
-      ctx.font = `${Math.round(28 * S)}px system-ui`;
-      ctx.fillText("🥣", cx + wob, cy);
-      this.ring(cx, z.y + z.h - 15 * S, 8 * S, Game.bench.t / Game.kit.mix);
-    } else if (st === "dough") {
-      ctx.fillStyle = "#f0dcbb"; ctx.strokeStyle = INK; ctx.lineWidth = 3 * S;
-      ctx.beginPath(); ctx.ellipse(cx, cy, z.w * 0.3, z.h * 0.19, 0, 0, Math.PI * 2);
-      ctx.fill(); ctx.stroke();
-      this.label(cx, z.y + z.h - 11 * S, "pick a cutter →", 10 * S, INK);
-    } else if (st === "cutting") {
-      ctx.font = `${Math.round(24 * S)}px system-ui`;
-      ctx.fillText("🍪", cx, cy);
-      this.ring(cx, z.y + z.h - 15 * S, 8 * S, Game.bench.t / CUT_TIME);
-    } else if (st === "ready") {
-      this.drawTray(cx, cy, Math.min(z.w * 0.28, z.h * 0.24), Game.bench.tray);
-      this.label(cx, z.y + z.h - 11 * S, "tap to pick up", 9.5 * S, INK);
-    }
-
-    for (const p of this.zones) {
-      if (p.kind !== "cutter") continue;
-      this.panel(p.x, p.y, p.w, p.h, PAPER, this.flash[p.key] ? 0.6 : 0);
-      const r = Math.min(p.w * 0.2, p.h * 0.3);
-      this.drawCookie(p.x + p.w * 0.28, p.y + p.h / 2, r, p.arg, "none", false, "perfect");
-      this.label(p.x + p.w * 0.66, p.y + p.h / 2, SHAPE[p.arg].name, 10.5 * S, INK);
-    }
-  },
-
-  drawShelf() {
-    const ctx = this.ctx, S = this.scale;
-    for (const z of this.zones) {
-      if (z.kind === "rack") {
-        const t = Game.rack[z.arg];
-        this.panel(z.x, z.y, z.w, z.h, "#efe3cd", this.flash[z.key] ? 0.5 : 0);
-        if (t) this.drawTray(z.x + z.w / 2, z.y + z.h * 0.46, Math.min(z.w * 0.22, z.h * 0.3), t);
-        else this.label(z.x + z.w / 2, z.y + z.h / 2, "🧊 rack", 10 * S, "rgba(42,33,27,.55)");
-      } else if (z.kind === "hands") {
-        const full = !!Game.hands;
-        this.panel(z.x, z.y, z.w, z.h, full ? "#ffe9a8" : PAPER, this.flash[z.key] ? 0.5 : 0,
-          full ? 4.5 : 3);
-        if (full) this.drawTray(z.x + z.w / 2, z.y + z.h * 0.46, Math.min(z.w * 0.22, z.h * 0.3), Game.hands);
-        else this.label(z.x + z.w / 2, z.y + z.h / 2, "🤲 hands", 10 * S, "rgba(42,33,27,.55)");
-      } else if (z.kind === "bin") {
-        this.panel(z.x, z.y, z.w, z.h, "#d9cdb6", this.flash[z.key] ? 0.5 : 0);
-        this.label(z.x + z.w / 2, z.y + z.h / 2, "🗑️ bin", 10 * S, INK);
-      }
-    }
-  },
-
-  /* ---------------- the cookies ---------------- */
-
-  // A tray: four cookies on a baking sheet. One tray IS one order, so this and
-  // the picture on an order card are drawn by the same code below it.
-  drawTray(cx, cy, r, tray, inOven = false) {
-    const ctx = this.ctx, S = this.scale;
-    const w = r * 3.4, h = r * 2.5;
-    ctx.fillStyle = inOven ? "#8d8377" : "#b9b0a3";
-    ctx.strokeStyle = INK; ctx.lineWidth = 2.5 * S;
-    this.roundRect(cx - w / 2, cy - h / 2, w, h, 5 * S);
-    ctx.fill(); ctx.stroke();
-    const o = r * 0.72;
-    for (const [dx, dy] of [[-o, -o * 0.62], [o, -o * 0.62], [-o, o * 0.62], [o, o * 0.62]])
-      this.drawCookie(cx + dx, cy + dy, r * 0.56, tray.shape, tray.icing, tray.sprinkles, tray.bake);
-  },
-
-  drawCookie(cx, cy, r, shapeId, icingId, sprinkles, bake) {
-    const ctx = this.ctx, S = this.scale;
-    const sh = SHAPE[shapeId];
-    const body = BAKE_COLOUR[bake] || sh.colour;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = Math.max(1.2, 2 * S);
-
-    ctx.fillStyle = body;
-    this.shapePath(shapeId, r);
-    ctx.fill(); ctx.stroke();
-
-    if (icingId && icingId !== "none" && bake !== "burnt") {
-      ctx.fillStyle = ICING[icingId].swatch;
-      this.shapePath(shapeId, r * 0.68);
-      ctx.fill();
-    }
-    if (sprinkles && bake !== "burnt") {
-      const cols = ["#ff5d8f", "#4ec3ff", "#ffe14d", "#6ee27a", "#ffffff"];
-      for (let i = 0; i < 7; i++) {
-        // A stable per-cookie scatter: hash2 returns a FLOAT, so scale before
-        // taking a modulus or every sprinkle lands in the same place.
-        const a = GK.util.hash2(i + 1, r) * Math.PI * 2;
-        const d = r * (0.18 + GK.util.hash2(r, i + 3) * 0.42);
-        ctx.fillStyle = cols[Math.floor(GK.util.hash2(i + 5, r) * 997) % cols.length];
-        ctx.beginPath();
-        ctx.arc(Math.cos(a) * d, Math.sin(a) * d, Math.max(0.9, r * 0.11), 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    ctx.restore();
-  },
-
-  shapePath(id, r) {
-    const ctx = this.ctx;
-    ctx.beginPath();
-    if (id === "round") {
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-    } else if (id === "star") {
-      for (let i = 0; i < 10; i++) {
-        const a = -Math.PI / 2 + (i * Math.PI) / 5;
-        const rr = i % 2 ? r * 0.45 : r;
-        i ? ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
-      }
-      ctx.closePath();
-    } else if (id === "heart") {
-      ctx.moveTo(0, r * 0.92);
-      ctx.bezierCurveTo(-r * 1.5, -r * 0.25, -r * 0.5, -r * 1.1, 0, -r * 0.34);
-      ctx.bezierCurveTo(r * 0.5, -r * 1.1, r * 1.5, -r * 0.25, 0, r * 0.92);
-      ctx.closePath();
-    } else if (id === "flower") {
-      for (let i = 0; i < 6; i++) {
-        const a = (i * Math.PI) / 3;
-        ctx.moveTo(Math.cos(a) * r * 0.55 + r * 0.45, Math.sin(a) * r * 0.55);
-        ctx.arc(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55, r * 0.45, 0, Math.PI * 2);
-      }
-      ctx.moveTo(r * 0.4, 0);
-      ctx.arc(0, 0, r * 0.4, 0, Math.PI * 2);
-    } else if (id === "moon") {
-      ctx.arc(0, 0, r, Math.PI * 0.42, Math.PI * 1.58, false);
-      ctx.arc(-r * 0.42, 0, r * 0.86, Math.PI * 1.5, Math.PI * 0.5, true);
-      ctx.closePath();
-    } else if (id === "tree") {
-      ctx.moveTo(0, -r);
-      ctx.lineTo(r * 0.55, -r * 0.12); ctx.lineTo(r * 0.26, -r * 0.12);
-      ctx.lineTo(r * 0.82, r * 0.6); ctx.lineTo(r * 0.2, r * 0.6);
-      ctx.lineTo(r * 0.2, r); ctx.lineTo(-r * 0.2, r); ctx.lineTo(-r * 0.2, r * 0.6);
-      ctx.lineTo(-r * 0.82, r * 0.6); ctx.lineTo(-r * 0.26, -r * 0.12);
-      ctx.lineTo(-r * 0.55, -r * 0.12);
-      ctx.closePath();
-    } else {
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-    }
-  },
-
-  /* ---------------- little drawing helpers ---------------- */
-
-  panel(x, y, w, h, fill, flash = 0, lw = 3) {
-    const ctx = this.ctx, S = this.scale;
-    ctx.fillStyle = fill;
-    this.roundRect(x, y, w, h, 11 * S); ctx.fill();
-    if (flash > 0) {
-      ctx.save();
-      ctx.globalAlpha = Math.min(0.65, flash);
-      ctx.fillStyle = "#ffffff";
-      this.roundRect(x, y, w, h, 11 * S); ctx.fill();
-      ctx.restore();
-    }
-    ctx.strokeStyle = INK; ctx.lineWidth = lw * S;
-    this.roundRect(x, y, w, h, 11 * S); ctx.stroke();
-  },
-
-  roundRect(x, y, w, h, r) {
-    const ctx = this.ctx;
+  round(c, x, y, w, h, r) {
     const rr = Math.max(0, Math.min(r, w / 2, h / 2));
-    ctx.beginPath();
-    ctx.moveTo(x + rr, y);
-    ctx.arcTo(x + w, y, x + w, y + h, rr);
-    ctx.arcTo(x + w, y + h, x, y + h, rr);
-    ctx.arcTo(x, y + h, x, y, rr);
-    ctx.arcTo(x, y, x + w, y, rr);
-    ctx.closePath();
-  },
-
-  label(x, y, text, size, colour) {
-    const ctx = this.ctx;
-    ctx.font = `800 ${Math.round(size)}px "Baloo 2", system-ui, sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = colour;
-    ctx.fillText(text, x, y);
-  },
-
-  ring(cx, cy, r, frac) {
-    const ctx = this.ctx, S = this.scale;
-    ctx.strokeStyle = "rgba(42,33,27,.22)"; ctx.lineWidth = 4 * S;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = INK;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * GK.util.clamp(frac, 0, 1));
-    ctx.stroke();
-  },
-
-  // Canvas-space point for a zone, so main.js can throw particles and floating
-  // text at the thing that just happened.
-  centre(key) {
-    const z = this.zones.find((x) => x.key === key);
-    return z ? { x: z.x + z.w / 2, y: z.y + z.h / 2 } : { x: this.W / 2, y: this.H / 2 };
+    c.beginPath();
+    c.moveTo(x + rr, y);
+    c.arcTo(x + w, y, x + w, y + h, rr);
+    c.arcTo(x + w, y + h, x, y + h, rr);
+    c.arcTo(x, y + h, x, y, rr);
+    c.arcTo(x, y, x + w, y, rr);
+    c.closePath();
   },
 };

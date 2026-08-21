@@ -1,7 +1,6 @@
-// Cookie Crumble icons: one big chocolate-chip cookie with a bite out of it,
-// on the bakery's cream wall. Bright crayon, so everything gets a thick ink
-// outline — drawn as a slightly larger ink shape behind each fill, since png.js
-// only fills.
+// Cookie Crumble icons: a teapot and a cup on the tearoom counter, against the
+// bone wall. Bright and flat, so everything gets a thick ink outline — drawn as
+// a slightly larger ink shape behind each fill, since png.js only fills.
 //
 //   $env:Path += ';C:\Program Files\nodejs'
 //   node tools/make-icons.js
@@ -11,51 +10,62 @@ const path = require("path");
 const { makeCanvas, downsample, encodePNG } = require("../lib/tools/png.js");
 
 const INK = "#2a211b";
-const WALL = "#ffe9c4";
-const FLOOR = "#e8cfa4";
-const DOUGH = "#d99a52";
-const DOUGH_LT = "#e9b877";
-const CHIP = "#4a3226";
+const WALL = "#f7e3c6";
+const COUNTER = "#b8804a";
+const SLAB = "#e8cba0";
+const POT = "#d9576f";
+const POT_LT = "#e8798c";
+const CUP = "#fffdf9";
+const TEA = "#c98d15";
 
-// `art` scales the cookie about the centre. The maskable icon uses a smaller
-// value so the art survives a circular or squircle crop.
+// `art` scales the whole still life about the centre. The maskable icon uses a
+// smaller value so nothing important is lost to a circular crop.
 function paint(size, art) {
   const SS = 4, big = size * SS;
   const cv = makeCanvas(big);
   const u = big / 100;                       // one unit = 1% of the icon
   const mid = big / 2;
+  const S = (n) => n * u * art;
 
   cv.fillRect(0, 0, big, big, WALL);
-  cv.fillRect(0, 74 * u, big, 26 * u, FLOOR);
-  cv.fillRect(0, 72.5 * u, big, 2.2 * u, INK);
+  // counter along the bottom
+  cv.fillRect(0, 70 * u, big, 30 * u, COUNTER);
+  cv.fillRect(0, 68 * u, big, 4 * u, SLAB);
+  cv.fillRect(0, 67 * u, big, 1.8 * u, INK);
 
-  const r = 31 * u * art;
-  const o = 3.4 * u * art;
-  const cy = mid + 2 * u;
+  const baseY = mid + S(16);
 
-  // A bite would be the obvious motif and png.js cannot draw one: with only
-  // filled primitives, a wall-coloured circle over the edge takes its ink ring
-  // with it and the "bite" reads as a bubble sitting on the cookie. Two cookies
-  // give the same warmth with no clipping.
-  const smx = mid - r * 1.02, smy = cy - r * 0.5, sr = r * 0.56;
-  cv.fillCircle(smx, smy, sr + o, INK);
-  cv.fillCircle(smx, smy, sr, DOUGH);
-  for (const [dx, dy] of [[-0.3, 0.1], [0.24, -0.22], [0.1, 0.36]])
-    cv.fillCircle(smx + sr * dx, smy + sr * dy, sr * 0.19, CHIP);
+  // the cup, to the right
+  const cx = mid + S(31), cw = S(16), ch = S(13);
+  cv.fillRoundRect(cx - cw / 2 - S(2), baseY - ch - S(2), cw + S(4), ch + S(4), S(4), INK);
+  cv.fillRoundRect(cx - cw / 2, baseY - ch, cw, ch, S(3), CUP);
+  cv.fillRect(cx - cw / 2 + S(2), baseY - ch + S(2), cw - S(4), S(3.5), TEA);
 
-  cv.fillCircle(mid, cy, r + o, INK);
-  cv.fillCircle(mid, cy, r, DOUGH);
-  // A lighter crescent along the top-left, so it reads as round rather than flat.
-  cv.fillCircle(mid - r * 0.18, cy - r * 0.2, r * 0.68, DOUGH_LT);
-  cv.fillCircle(mid - r * 0.02, cy - r * 0.03, r * 0.6, DOUGH);
+  // the pot body
+  const pr = S(21);
+  cv.fillCircle(mid - S(6), baseY - pr * 0.86, pr + S(2.4), INK);
+  cv.fillCircle(mid - S(6), baseY - pr * 0.86, pr, POT);
+  cv.fillCircle(mid - S(13), baseY - pr * 1.16, pr * 0.52, POT_LT);
 
-  const chips = [
-    [-0.42, 0.12, 0.15], [-0.04, 0.44, 0.16], [0.36, 0.28, 0.14],
-    [-0.32, -0.36, 0.13], [0.08, -0.2, 0.15], [0.48, -0.14, 0.12],
-    [-0.58, 0.46, 0.11], [0.04, 0.04, 0.10], [0.3, -0.5, 0.12],
-  ];
-  for (const [dx, dy, cr] of chips)
-    cv.fillCircle(mid + r * dx, cy + r * dy, r * cr, CHIP);
+  // spout, left
+  cv.fillTriangle(
+    mid - S(24), baseY - pr * 1.05,
+    mid - S(40), baseY - pr * 1.5,
+    mid - S(24), baseY - pr * 0.45, INK);
+  cv.fillTriangle(
+    mid - S(25), baseY - pr * 1.02,
+    mid - S(36), baseY - pr * 1.4,
+    mid - S(25), baseY - pr * 0.6, POT);
+
+  // handle, right — an ink ring with the wall punched back through it
+  cv.fillCircle(mid + S(12), baseY - pr * 0.9, S(9), INK);
+  cv.fillCircle(mid + S(12), baseY - pr * 0.9, S(5.4), POT);
+
+  // lid and knob
+  cv.fillRoundRect(mid - S(16), baseY - pr * 1.72 - S(4), S(20), S(6), S(3), INK);
+  cv.fillRoundRect(mid - S(15), baseY - pr * 1.72 - S(3), S(18), S(4), S(2), POT_LT);
+  cv.fillCircle(mid - S(6), baseY - pr * 1.72 - S(7), S(4.4), INK);
+  cv.fillCircle(mid - S(6), baseY - pr * 1.72 - S(7), S(2.6), POT_LT);
 
   return encodePNG(size, size, downsample(cv.px, big, SS));
 }
@@ -63,13 +73,11 @@ function paint(size, art) {
 const out = path.join(__dirname, "..", "icons");
 fs.mkdirSync(out, { recursive: true });
 
-const files = [
+for (const [name, size, art] of [
   ["icon-192.png", 192, 1.0],
   ["icon-512.png", 512, 1.0],
-  ["maskable-512.png", 512, 0.74],
-];
-
-for (const [name, size, art] of files) {
+  ["maskable-512.png", 512, 0.72],
+]) {
   fs.writeFileSync(path.join(out, name), paint(size, art));
   console.log(`icons/${name}`);
 }

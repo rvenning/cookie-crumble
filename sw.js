@@ -6,7 +6,7 @@
 // BUMP THE CACHE NAME whenever any shell file below changes, or devices keep
 // serving the copy they already have and the fix never lands.
 
-const CACHE = "cookie-crumble-v3";
+const CACHE = "cookie-crumble-v4";
 
 const SHELL = [
   "./",
@@ -23,7 +23,7 @@ const SHELL = [
   "lib/gk-fx.js",
   "lib/gk-debug.js",
   "js/firebase-config.js",
-  "js/recipes.js",
+  "js/menu.js",
   "js/shifts.js",
   "js/upgrades.js",
   "js/game.js",

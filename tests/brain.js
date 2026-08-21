@@ -1,257 +1,248 @@
-// The bots. One brain, four sets of dials — because a bot that plays a
-// different game from the one it is grading tells you nothing.
+// The bots.
 //
-// The brain plays the genre's actual verb, which here is NOT "tap the oven at
-// the right moment". It is "keep the oven full while your hands are free at the
-// moment it finishes" — the timing only matters because something else is always
-// competing for the one pair of hands. So the policy is a priority list with the
-// oven at the top and a stash move underneath it, and everything the shop sells
-// shows up as slack in that list.
+// A routing game is a joy to bot, because the thing the player is choosing is
+// exactly the thing a bot has to choose: of every job available right now, which
+// one next. So the brain is one function — enumerate every legal tap, score it,
+// take the best — and the interesting bots are the ones that score it WRONG in
+// specific, human ways.
 //
-// The kid bot's error model is written as four NAMED mistakes rather than one
-// noise dial, because each says something the others cannot:
+//   planner   weighs urgency against the walk. The guardrail.
+//   ordinary  the same brain, at a child's tap rate, that sometimes picks the
+//             wrong job and often forgets the kitchen. The tuning target.
+//   hurried   faster hands, worse judgement.
+//   greedy    always runs to whoever is closest to leaving and ignores the walk
+//             entirely. NOT a control — it turns out to be a genuinely good
+//             strategy that scores within 1% of the planner, because when the
+//             floor is saturated you have to visit everything anyway and
+//             triage-first is close to optimal. Kept in the report as an honest
+//             finding: distance matters WITHIN a good policy, not instead of one.
+//   random    picks any legal job at all. THIS is the control — if it keeps up,
+//             the choices are not choices.
+//   idle      does nothing at all.
 //
-//   reaction      she taps at a child's rate, not a machine's
-//   absorb        she is BUSY WITH THE THING IN FRONT OF HER (this is what burns)
-//   misread       she reads the card wrong: wrong cutter, wrong colour
-//   sprinkleSlip  she forgets the sprinkles, or adds some nobody asked for
-//
-// `absorb` replaced a per-step "does she glance at the oven?" coin flip, and the
-// difference is the whole reason the oven is a mechanic. A coin flip RE-ROLLS:
-// over a 1.4s window a bot flipping every 0.5s at 62% catches it 96% of the
-// time, so every bot in the cast baked 100% perfect on every shift and the
-// timing cost nothing. Attention is a STATE, not a sample — she starts mixing
-// and does not look up for two seconds — and a blackout only produces misses
-// when it is LONGER than the window it can hide. That single change is what
-// turned the bake into something the Kitchen Timer is worth buying for.
-//
-// Uniform noise would have been worse than useless here: a random tap is a
-// strictly worse strategy than no tap, so a "child" built out of random taps
-// comes out below the do-nothing control and every conclusion drawn from the
-// gap between them is backwards.
+// The kid's mistakes are NAMED rather than being one noise dial, because each
+// tells you something the others cannot:
+//   reaction  she taps at a child's rate
+//   misread   she goes to the wrong table, and pays the walk for it
+//   forget    she leaves the kitchen idle, and the pass runs dry
 
 const BRAINS = {
-  // Not a machine. Six taps a second with no attention cost proves "nothing is
-  // unwinnable" only for something nobody is, which is the weaker claim; these
-  // are an attentive grown-up's hands.
-  perfect:  { reaction: 0.24, absorb: 0.45, misread: 0.00, sprinkleSlip: 0.00 },
-  ordinary: { reaction: 0.50, absorb: 2.0, misread: 0.07, sprinkleSlip: 0.10 },
-  hurried:  { reaction: 0.32, absorb: 2.6, misread: 0.16, sprinkleSlip: 0.20 },
-  idle:     { reaction: 0.16, absorb: 0.0, misread: 0.00, sprinkleSlip: 0.00, doNothing: true },
+  planner:  { reaction: 0.30, misread: 0.00, forget: 0.00 },
+  ordinary: { reaction: 0.62, misread: 0.14, forget: 0.26 },
+  hurried:  { reaction: 0.40, misread: 0.38, forget: 0.55 },
+  greedy:   { reaction: 0.30, misread: 0.00, forget: 0.00, ignoreWalk: true },
+  random:   { reaction: 0.30, misread: 1.00, forget: 0.00 },
+  idle:     { reaction: 0.30, doNothing: true },
 };
 
-function sig(o) { return `${o.shape}|${o.icing}|${o.sprinkles ? 1 : 0}`; }
+// What each job is worth attending to, before urgency and distance. `clear` is
+// high because it is now two jobs in one — they settle up as you wipe the table,
+// so it is both the money and the thing that frees a seat.
+const WEIGHT = { serve: 1.35, order: 1.0, seat: 1.05, clear: 1.2, collect: 0.95 };
 
 function makeBrain(S, name) {
-  const opts = BRAINS[name];
+  const o = BRAINS[name];
   const G = S.Game;
-  const rand = S.__rand;                 // the SANDBOX's seeded stream, not Node's
+  const rand = S.__rand;                 // the SANDBOX's seeded stream
 
   return {
-    acc: 0,
-    cutPlan: null,
-    taps: 0,
-    absorbed: 0,        // seconds still head-down in whatever she just started
+    acc: 0, taps: 0, wrong: 0,
 
-    reset() { this.acc = 0; this.cutPlan = null; this.taps = 0; this.absorbed = 0; },
+    reset() { this.acc = 0; this.taps = 0; this.wrong = 0; },
 
     tick(dt) {
-      if (opts.doNothing) return;
-      this.absorbed = Math.max(0, this.absorbed - dt);
+      if (o.doNothing) return;
       this.acc += dt;
-      while (this.acc >= opts.reaction) {
-        this.acc -= opts.reaction;
-        if (this.act()) this.taps++;
+      while (this.acc >= o.reaction) {
+        this.acc -= o.reaction;
+        this.act();
       }
     },
 
-    // Everything that is not the oven buries her in it for a moment.
-    busy() { this.absorbed = opts.absorb; return true; },
+    // Where she will be standing once the queued jobs are done — planning against
+    // her CURRENT position would ignore the trip she is already committed to.
+    // `here` legs move her nowhere, so walk back past them to the last real one.
+    endPos() {
+      const tasks = G.server.tasks;
+      for (let i = tasks.length - 1; i >= 0; i--) {
+        const legs = tasks[i].legs;
+        for (let j = legs.length - 1; j >= 0; j--)
+          if (!legs[j].here) return { x: legs[j].x, y: legs[j].y };
+      }
+      return { x: G.server.x, y: G.server.y };
+    },
 
-    /* ---------- what is in the kitchen ---------- */
+    walkCost(x, y) {
+      if (o.ignoreWalk) return 0.35;
+      const p = this.endPos();
+      return Math.hypot(p.x - x, p.y - y) / G.kit.walk;
+    },
 
-    trays() {
+    urgency(party) {
+      if (!party) return 0.5;
+      return 1 - Math.max(0, Math.min(1, party.patience / party.patienceMax));
+    },
+
+    /* ---------- every legal tap, right now ---------- */
+
+    options() {
       const out = [];
-      if (G.hands) out.push(G.hands);
-      if (G.bench.tray) out.push(G.bench.tray);
-      if (G.table) out.push(G.table.tray);
-      for (const o of G.ovens) if (o.tray) out.push(o.tray);
-      for (const r of G.rack) if (r) out.push(r);
+      const carrying = G.server.carrying;
+      const claimed = G.server.tasks.filter((k) => k.kind === "collect").length;
+      // Anything already being walked to is not a choice. Leaving these in meant
+      // the bot's best-scoring option was often a job it had already committed
+      // to, so it spent the tick being refused instead of doing something else.
+      const busyTable = (t) => G.server.tasks.some((k) => k.tableId === t.i);
+
+      for (const t of G.tables) {
+        if (busyTable(t)) continue;
+        if (t.state === "seated") out.push({ kind: "order", table: t, party: t.party, x: t.x, y: t.y + 34 });
+        else if (t.state === "bill") out.push({ kind: "clear", table: t, party: t.party, paying: true, x: t.x, y: t.y + 34 });
+        else if (t.state === "dirty") out.push({ kind: "clear", table: t, party: null, x: t.x, y: t.y + 34 });
+        else if (t.state === "ordered") {
+          const g = S.GUEST[t.party.type];
+          const spare = carrying.slice();
+          const canAll = t.wants.every((d) => { const k = spare.indexOf(d); if (k < 0) return false; spare.splice(k, 1); return true; });
+          const canAny = t.wants.some((d) => carrying.includes(d));
+          if (canAny)
+            out.push({ kind: "serve", table: t, party: t.party, x: t.x, y: t.y + 34 });
+        }
+      }
+
+      // Seating: every waiting party against every free table, so the colour
+      // match is a choice the bot actually makes rather than a coincidence.
+      const free = G.freeTables().filter((t) => !busyTable(t));
+      const here = this.endPos();
+      for (const p of G.queue)
+        for (const t of free) {
+          // Seating costs no walk unless they need escorting, so it must be
+          // priced from where she already is, not from the door.
+          const esc = S.GUEST[p.type].escort;
+          out.push({ kind: "seat", party: p, table: t,
+                     x: esc ? t.x : here.x, y: esc ? t.y + 34 : here.y,
+                     match: p.cloth === t.cloth });
+        }
+
+      // One trip to the pass loads the whole tray, so this is a single option
+      // rather than one per plate. Its urgency is that of the hungriest table
+      // waiting for anything sitting there — pricing it at a flat middling
+      // urgency was the worst bug in this file, because a visibly cross customer
+      // always outbid the trip to fetch their food, so the bot took orders it
+      // then never filled. Seven orders taken, one party fed, seven plates cold.
+      if (G.pass.length && carrying.length < G.kit.carry && !claimed) {
+        const need = G.outstanding();
+        let worst = null, wanted = false;
+        for (const pl of G.pass) {
+          if (need[pl.dish]) wanted = true;
+          for (const t of G.tables)
+            if (t.state === "ordered" && t.wants.includes(pl.dish))
+              if (!worst || t.party.patience / t.party.patienceMax < worst.patience / worst.patienceMax) worst = t.party;
+        }
+        out.push({ kind: "collect", party: worst, wanted,
+                   x: S.PASS.x0 + S.PASS.step, y: S.PASS.standY });
+      }
+
       return out;
     },
 
-    // Raw trays that still need an oven and are NOT in one. This is the number
-    // that has to be capped: without it the bot mixes a third bowl it has
-    // nowhere to put, fills both hands and the rack, and then cannot open the
-    // oven door — a deadlock that reads as "this shift is unwinnable".
-    queuedRaw() {
-      let n = this.cutPlan ? 1 : 0;
-      const inOven = new Set(G.ovens.map((o) => o.tray).filter(Boolean));
-      for (const t of this.trays()) if (t.bake === "raw" && !inOven.has(t)) n++;
-      return n;
-    },
+    value(a) {
+      const w = WEIGHT[a.kind] || 1;
+      const urg = this.urgency(a.party);
+      const cost = this.walkCost(a.x, a.y) + 0.35;
 
-    // Waiting orders nobody is already baking for.
-    unmet() {
-      const need = new Map();
-      const bump = (k, d) => need.set(k, (need.get(k) || 0) + d);
-      for (const c of G.counter) bump(sig(c.order), 1);
-      for (const t of this.trays()) if (t._plan) bump(sig(t._plan), -1);
-      if (this.cutPlan) bump(sig(this.cutPlan), -1);
-      return need;
-    },
-
-    // The most impatient customer nobody is working for.
-    nextTarget() {
-      const need = this.unmet();
-      let best = null;
-      for (const c of G.counter) {
-        if ((need.get(sig(c.order)) || 0) <= 0) continue;
-        if (!best || c.patience < best.patience) best = c;
+      let v = w * (0.35 + urg * 1.9) / cost;
+      if (a.kind === "seat") {
+        // Seating a colour match is worth a detour; seating anybody at all is
+        // urgent because the door drains and the queue blocks arrivals.
+        if (a.match) v *= 1.5;
+        v *= 0.75 + 0.5 * (G.queue.length / Math.max(1, G.kit.queue));
       }
-      return best ? best.order : null;
-    },
-
-    // Her customer left, or the tray came out of the oven a different colour
-    // from the one it was meant for. Find somebody else who wants it.
-    rePlan(tray) {
-      const need = this.unmet();
-      let best = null;
-      for (const c of G.counter) {
-        const o = c.order;
-        if (o.shape !== tray.shape) continue;
-        if (tray.icing !== "none" && o.icing !== tray.icing) continue;
-        if ((need.get(sig(o)) || 0) <= 0) continue;
-        if (!best || c.patience < best.patience) best = c;
+      if (a.kind === "collect" && !a.wanted) v *= 0.35;
+      // A table with the bill on it is money sitting there; an empty dirty one is
+      // only worth rushing to when somebody is waiting for a seat.
+      if (a.kind === "clear") {
+        if (a.paying) v *= 1.4;
+        else v *= (G.queue.length && !G.freeTables().length) ? 2.2 : 0.7;
       }
-      if (best) tray._plan = best.order;
-      return best ? best.order : null;
+      // Keep the chain alive. At 1.18 the bot never bothered and best chains sat
+      // at 2.1, which made the multiplier decoration; a player who actively
+      // hunts chains needs to be modelled as actually hunting them.
+      if (a.kind === G.chainKind) v *= 1.45;
+      return v;
     },
 
-    /* ---------- mistakes ---------- */
-
-    // Reading the card wrong: a legal choice, just not the right one. It costs
-    // exactly what it costs a person — the tray has to be remade, or scraped.
-    misread(value, list) {
-      if (rand() >= opts.misread || list.length < 2) return value;
-      const others = list.filter((v) => v !== value && v !== "none");
-      return others.length ? others[Math.floor(rand() * others.length)] : value;
-    },
-
-    /* ---------- the oven ---------- */
-
-    // Whichever slot is closest to burning, once it is worth opening.
-    ovenSlot() {
-      let best = -1, worst = -1;
-      for (let i = 0; i < G.ovens.length; i++) {
-        const o = G.ovens[i];
-        if (!o.tray) continue;
-        if (o.phase === "raw") continue;
-        const b = S.bakeBands(o.tray.shape, G.kit.timer);
-        const over = o.tray.bakeT - b.start;
-        if (over > worst) { worst = over; best = i; }
-      }
-      return best;
-    },
-
-    // Park what is in your hands so a hand is free for the oven door.
-    stash() {
-      const free = G.rack.indexOf(null);
-      if (free < 0) return false;
-      return G.tapRack(free).ok;
-    },
-
-    /* ---------- one tap ---------- */
+    /* ---------- one decision ---------- */
 
     act() {
-      // Adopt whatever the last cut produced.
-      if (this.cutPlan) {
-        const t = (G.hands && !G.hands._plan) ? G.hands
-          : (G.bench.tray && !G.bench.tray._plan) ? G.bench.tray : null;
-        if (t) { t._plan = this.cutPlan; this.cutPlan = null; }
+      // Keep the kitchen going. This is free — no walk — so a bot that forgets it
+      // is modelling a child who forgets it, not a bot with bad code.
+      if (rand() >= o.forget) this.cook();
+
+      // Hands full of food nobody wants is the one genuine dead end, and the bin
+      // is the only way out. Test that against what the tables RAW want — not
+      // against outstanding(), which has already subtracted the very tray she is
+      // holding, so carrying exactly the right order reads as carrying rubbish.
+      // That one line had her fetch the correct two dishes and immediately throw
+      // them away, on a loop, for the rest of the shift.
+      if (G.server.carrying.length >= G.kit.carry) {
+        const useful = G.server.carrying.some((d) =>
+          G.tables.some((t) => t.state === "ordered" && t.wants.includes(d)));
+        const coming = G.tables.some((t) => t.state === "seated");
+        if (!useful && !coming) G.tapBin();
       }
 
-      if (G.hands && G.hands.bake === "burnt") return G.tapBin().ok && this.busy();
+      if (G.server.tasks.length >= S.TASK_QUEUE) return;
 
-      // 1. The oven — but only if her head is up. Moving a tray between the
-      // oven, her hands and the rack is all one glance, so none of it absorbs
-      // her further.
-      if (this.absorbed <= 0) {
-        const slot = this.ovenSlot();
-        if (slot >= 0) {
-          if (!G.hands) return G.tapOven(slot).ok;
-          if (this.stash()) return true;
-          // Nowhere to put it and the tray is going dark: throw away the raw
-          // one rather than lose the baked one. The escape hatch that makes a
-          // deadlock impossible by construction.
-          if (G.ovens[slot].phase === "crisp" && G.hands.bake === "raw") return G.tapBin().ok;
-        }
-      }
+      const opts = this.options();
+      if (!opts.length) return;
 
-      // 2. Somebody wants exactly what you are holding.
-      if (G.hands) {
-        const c = G.counter.find((x) => S.trayFills(G.hands, x.order));
-        if (c) return G.tapCustomer(c.id).ok && this.busy();
+      let pick;
+      if (rand() < o.misread) {
+        pick = opts[Math.floor(rand() * opts.length)];
+        this.wrong++;
+      } else {
+        let best = -Infinity;
+        for (const a of opts) { const v = this.value(a); if (v > best) { best = v; pick = a; } }
       }
+      if (!pick) return;
 
-      // 3. The icing table.
-      if (G.table && G.table.icingT <= 0) {
-        const tr = G.table.tray;
-        const plan = tr._plan && this.stillWanted(tr._plan) ? tr._plan : this.rePlan(tr);
-        if (plan) {
-          if (plan.icing !== "none" && tr.icing !== plan.icing)
-            return G.tapIcing(this.misread(plan.icing, G.icings())).ok && this.busy();
-          if (G.sprinklesOn() && !!plan.sprinkles !== !!tr.sprinkles) {
-            if (rand() >= opts.sprinkleSlip) return G.tapSprinkles().ok && this.busy();
-          }
-        }
-        if (!G.hands) return G.tapTable().ok && this.busy();
+      this.taps++;
+      if (pick.kind === "seat") {
+        if (G.selected !== pick.party) G.tapQueue(pick.party.id);
+        G.tapTable(pick.table.i);
+      } else if (pick.kind === "collect") {
+        if (G.selected) G.tapQueue(G.selected.id);
+        G.tapPass();
+      } else {
+        if (G.selected) G.tapQueue(G.selected.id);
+        G.tapTable(pick.table.i);
       }
-
-      // 4. A baked tray in your hands that still needs decorating.
-      if (G.hands && (G.hands.bake === "perfect" || G.hands.bake === "crisp")) {
-        const plan = G.hands._plan && this.stillWanted(G.hands._plan)
-          ? G.hands._plan : this.rePlan(G.hands);
-        if (!plan) return G.tapBin().ok && this.busy();
-        const needsWork = (plan.icing !== "none" && G.hands.icing !== plan.icing)
-          || (G.sprinklesOn() && !!plan.sprinkles !== !!G.hands.sprinkles);
-        if (needsWork && !G.table) return G.tapTable().ok && this.busy();
-        if (this.stash()) return true;
-        return false;
-      }
-
-      // 5. A raw tray in your hands wants an oven.
-      if (G.hands && G.hands.bake === "raw") {
-        const free = G.ovens.findIndex((o) => !o.tray);
-        if (free >= 0) return G.tapOven(free).ok;
-        if (this.stash()) return true;
-        return false;
-      }
-
-      // 6. The bench.
-      if (G.bench.state === "ready" && !G.hands) return G.tapBench().ok;
-      if (G.bench.state === "dough") {
-        const plan = this.cutPlan || this.nextTarget();
-        if (!plan) return false;
-        this.cutPlan = plan;
-        return G.tapCutter(this.misread(plan.shape, G.shapes())).ok && this.busy();
-      }
-      if (G.bench.state === "empty") {
-        if (this.queuedRaw() >= G.rack.length) return false;
-        if (!this.nextTarget()) return false;
-        return G.tapBench().ok && this.busy();
-      }
-      return false;
     },
 
-    stillWanted(order) {
-      return G.counter.some((c) => S.sameOrder(c.order, order));
+    // Put on whatever the floor is short of; failing that, keep something going
+    // so the pass is never empty when an order lands.
+    cook() {
+      const need = G.demand();
+      for (const s of S.STATIONS) {
+        if (G.stationBusy(s.id)) continue;
+        if (G.passFull()) break;
+        const makes = Array.isArray(s.makes) ? s.makes : [s.makes];
+        const useful = makes.filter((d) => G.shift.dishes.includes(d));
+        if (!useful.length) continue;
+        const short = useful.find((d) => (need[d] || 0) > 0);
+        if (short) { G.tapStation(s.id, short); continue; }
+        // Only cook on spec with an empty pass AND somebody about to order.
+        // Speculating any harder buries the pass in food nobody asked for, and
+        // a plate that goes cold cost a station slot it could have spent on
+        // something a table was actually waiting for.
+        if (!G.pass.length && G.tables.some((t) => t.state === "seated")) G.tapStation(s.id, useful[0]);
+      }
     },
   };
 }
 
 // Play one shift end to end. `seed` reseeds the SANDBOX's stream, so the same
-// seed produces the same deal and the same mistakes whichever run asks first.
+// seed gives the same day and the same mistakes whichever run asks first.
 function playShift(S, { shiftIdx, brainName, kit, seed, mode = "shift", cap = 900 }) {
   S.__reseed(seed);
   const G = S.Game;
@@ -267,14 +258,12 @@ function playShift(S, { shiftIdx, brainName, kit, seed, mode = "shift", cap = 90
     G.tick(dt);
     t += dt;
   }
-  // A run that hits the wall clock never finished; score it as the bust it is
-  // rather than letting it silently report the last good result.
   if (G.running) { G.running = false; G.result = null; }
   return G.result || {
-    mode, win: false, stars: 0, score: 0, coins: 0, served: G.served, lost: G.lost,
-    perfect: G.perfect, crisp: G.crisp, binned: G.binned, wrongTries: G.wrongTries,
-    seconds: t, shiftIdx, timedOut: true,
+    mode, win: false, stars: 0, score: G.score, coins: G.coins, served: G.served,
+    lost: G.lost, wasted: G.wasted, bestChain: G.bestChain, seconds: t,
+    target: G.shift.target, met: {}, shiftIdx, timedOut: true,
   };
 }
 
-module.exports = { BRAINS, makeBrain, playShift, sig };
+module.exports = { BRAINS, makeBrain, playShift };
