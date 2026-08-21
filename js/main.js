@@ -145,9 +145,9 @@ const App = {
 
   /* ---------------- today's shopping ---------------- */
 
-  // Dulcie's step one, and it earns its place: this is where you find out which
-  // cutters and colours today actually has, which is exactly what you need to
-  // know before the first customer walks in.
+  // Step one of the original brief, and it earns its place: this is where you
+  // find out which cutters and colours today actually has, which is exactly
+  // what you need to know before the first customer walks in.
   startShift(idx) {
     this.pendingShift = idx;
     const s = SHIFTS[idx];

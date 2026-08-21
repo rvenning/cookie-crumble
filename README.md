@@ -6,9 +6,10 @@ up waiting.
 
 **[▶️ Play it](https://rvenning.github.io/cookie-crumble/)**
 
-The game was invented by **Dulcie**, who wrote down all eight steps — get the
-ingredients, roll out the dough, put it in the tray, into the oven, take it out,
-decorate it, sell it, they give you money — and they are all in here.
+The game came from a list of eight steps written down by a friend of the family
+— get the ingredients, roll out the dough, put it in the tray, into the oven,
+take it out, decorate it, sell it, they give you money — and they are all in
+here.
 
 ## Features
 
