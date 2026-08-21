@@ -1,0 +1,428 @@
+/* Cookie Crumble — warm bakery.
+   Cream walls, caramel wood, thick near-black outlines. gk-base.css supplies
+   the screens/buttons/modals; this restyles them through the --gk-* custom
+   properties and adds the game's own screens.
+
+   Note the .screen override: gk-base sets align-items:center on every screen,
+   which silently collapses anything meant to fill the width — the game stage in
+   particular, whose only child is an absolutely-positioned canvas and therefore
+   has a content width of zero. */
+
+:root {
+  --ink: #2a211b;
+  --paper: #fffaf0;
+  --page: #fff3dd;
+  --wall: #ffe9c4;
+  --floor: #e8cfa4;
+  --wood: #c98f4e;
+
+  /* Every button fill below was measured against its own lettering rather than
+     eyeballed. gk-base's own --gk-green (#2fbf7a) and --gk-blue (#3f9be0) carry
+     WHITE text at 2.37:1 and 3.01:1 — at or below the floor for large text and
+     nowhere near it for the 14px buttons in .map-actions. These clear 4.5:1 on
+     the smallest button in the game.
+     Whatever value is measured has to be the gradient's TOP stop, so there are
+     no gradients here at all — flat fills only, which is also the look. */
+  --caramel: #a35a2a;      /* 5.19:1 on white */
+  --caramel-sh: #74381a;
+  --leaf: #1a8253;         /* 4.81 */
+  --sky: #2670ab;          /* 5.27 */
+  --stone: #616675;        /* 5.73 */
+  --berry: #c0463d;        /* 5.02 on white */
+  --sun: #ffd63d;          /* a LIGHT fill — takes ink lettering, never white */
+  --candy: #ff8fbf;        /* canvas art only: nothing is ever lettered on it */
+
+  /* On the sun-yellow bar --berry measures 3.57 at 13px, which is under the 4.5
+     small-text floor. Bar lettering gets its own darker red. */
+  --sad: #a32b20;          /* 5.12 on --sun */
+  /* Display text that carries a -webkit-text-stroke still has to pass WITHOUT
+     it: the ratio cannot see a stroke, and a browser that drops it turns a
+     "fine" wordmark into 1.2:1. These two read on cream unaided. */
+  --logo-a: #a35a2a;       /* 4.72 on --page */
+  --logo-b: #c92a63;       /* 4.82 on --page */
+
+  --gk-accent: var(--caramel);
+  --gk-accent-sh: var(--caramel-sh);
+  --gk-bg: var(--page);
+  --gk-text: var(--ink);
+  --gk-radius: 14px;
+}
+
+/* Paint the ROOT, not just body: with viewport-fit=cover iOS extends the visual
+   viewport past height:100% in standalone, and a background set only on body
+   stops short of the bottom inset — the gap falls through to the page canvas
+   and paints WHITE. */
+html { background: var(--floor); }
+
+body {
+  margin: 0;
+  /* Every screen is position:fixed, so body has almost no content height and
+     the root's floor colour would show through below it — a two-tone splash on
+     every launch. Stretch body over the viewport so its own colour wins. */
+  min-height: 100vh;
+  font-family: "Baloo 2", system-ui, sans-serif;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--page);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+h1, h2, h3, h4 { font-weight: 800; }
+
+/* ---------- buttons: redeclare EVERYTHING gk-base sets ---------- */
+
+.btn {
+  font-family: inherit;
+  font-weight: 800;
+  color: var(--paper);
+  background: var(--caramel);
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: 0 5px 0 var(--ink);
+  margin: 6px 0;
+  padding: 12px 18px;
+  font-size: 17px;
+  transition: transform .08s, box-shadow .08s;
+}
+.btn:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+.btn.green { background: var(--leaf); }
+.btn.blue { background: var(--sky); }
+.btn.grey { background: var(--stone); }
+.btn.danger { background: var(--berry); }
+/* A LIGHT fill takes ink lettering — white on cream is 1.1:1. */
+.btn.ghost { background: var(--paper); color: var(--ink); }
+.btn.big { font-size: 21px; padding: 15px 26px; }
+.btn.small { font-size: 14px; padding: 8px 12px; box-shadow: 0 4px 0 var(--ink); }
+.btn.wide { width: 100%; }
+.btn:disabled { opacity: .55; box-shadow: 0 5px 0 var(--ink); transform: none; }
+
+.icon-btn {
+  font-family: inherit;
+  font-size: 20px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  padding: 4px 9px;
+  color: var(--ink);
+}
+.icon-btn.scraper { background: var(--sun); font-size: 16px; }
+
+/* ---------- bars & screens ---------- */
+
+.screen { align-items: stretch; justify-content: flex-start; }
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+  background: var(--sun);
+  border-bottom: 4px solid var(--ink);
+  flex: 0 0 auto;
+}
+.bar h2 { flex: 1; margin: 0; font-size: 19px; text-align: center; }
+.hud { font-size: 15px; font-weight: 800; white-space: nowrap; }
+.hud.coins { margin-left: auto; font-size: 17px; }
+.hud.sad { color: var(--sad); }
+
+.screen-hint {
+  margin: 10px 14px 4px;
+  font-size: 14px;
+  font-weight: 700;
+  opacity: .78;
+  text-align: center;
+}
+
+/* ---------- splash ---------- */
+
+.splash-inner {
+  max-width: 420px;
+  margin: auto;
+  padding: 24px 18px calc(18px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.splash-cookie { font-size: 84px; line-height: 1; animation: bob 2.6s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(-9px) rotate(-5deg); } }
+.logo {
+  margin: 6px 0 2px;
+  font-size: 40px;
+  line-height: .95;
+  letter-spacing: -1px;
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+  color: var(--logo-a);
+}
+.logo span { display: block; color: var(--logo-b); }
+.tagline { margin: 4px 0 16px; font-size: 15px; opacity: .82; }
+.credit { margin: 14px 0 0; font-size: 13px; opacity: .8; }
+.splash-foot {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  opacity: .78;
+}
+
+/* ---------- the map ---------- */
+
+.map-player { flex: 1; font-size: 15px; display: flex; flex-direction: column; line-height: 1.15; }
+.map-stats { font-size: 13px; opacity: .82; }
+
+#screen-map, #screen-shop, #screen-leaderboard, #screen-profiles {
+  overflow-y: auto;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+}
+.btn.continue { margin: 12px 14px 4px; }
+.map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 14px 10px;
+}
+.map-actions .btn { flex: 1 1 30%; margin: 0; font-size: 14px; padding: 10px 8px; }
+
+.shift-list { padding: 0 12px; }
+.week {
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  background: var(--paper);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.week-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--week, var(--sun));
+  border-bottom: 3px solid var(--ink);
+}
+/* Ink lettering on every band, not cream-with-a-stroke: these hues are all
+   light, and cream on them measures 2-3:1 — legible only because of the text
+   stroke, which is not something to depend on. */
+.week-text { flex: 1; display: flex; flex-direction: column; line-height: 1.15; }
+.week-head h3 { margin: 0; font-size: 16px; color: var(--ink); }
+.week-blurb { font-size: 11.5px; font-weight: 700; color: var(--ink); opacity: .8; }
+.week-icon { font-size: 20px; }
+.week-tick { font-size: 18px; color: var(--ink); }
+.week.done .week-head { filter: saturate(.7); }
+
+.shift-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  padding: 10px;
+}
+.shift-card {
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 9px 3px;
+  background: var(--page);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 var(--ink);
+  color: var(--ink);
+}
+.shift-card:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+.shift-card.next { background: var(--sun); animation: nudge 1.6s ease-in-out infinite; }
+@keyframes nudge { 50% { transform: translateY(-3px); } }
+.shift-card.big { border-width: 4px; }
+.shift-card.locked { opacity: .5; box-shadow: 0 4px 0 var(--ink); transform: none; }
+.sc-num { font-size: 16px; font-weight: 800; }
+.sc-name { font-size: 10px; font-weight: 700; line-height: 1.15; text-align: center; }
+.sc-stars { font-size: 12px; color: #7a5c00; letter-spacing: 1px; }
+
+/* ---------- the Corner Shop ---------- */
+
+.shop-list { padding: 6px 12px; }
+.shop-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  margin-bottom: 9px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+}
+.si-icon { font-size: 28px; }
+.si-text { flex: 1; display: flex; flex-direction: column; font-size: 14px; line-height: 1.25; }
+.si-pips { font-size: 12px; color: var(--caramel-sh); letter-spacing: 2px; }
+.si-desc { font-size: 12px; font-weight: 700; opacity: .78; }
+
+.trim-head { margin: 16px 14px 2px; font-size: 17px; }
+.trim-head span { font-size: 14px; opacity: .75; }
+.trim-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 6px 12px;
+}
+.trim {
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 2px;
+  background: var(--paper);
+  border: 3px dashed var(--ink);
+  border-radius: 12px;
+  color: var(--ink);
+}
+.trim.owned { border-style: solid; background: var(--sun); }
+.trim:disabled { opacity: 1; }
+.trim:not(.owned):disabled { opacity: .45; }
+.tr-icon { font-size: 26px; line-height: 1; }
+.tr-cost { font-size: 10px; font-weight: 700; }
+
+/* ---------- leaderboard ---------- */
+
+.lb-rows { padding: 6px 12px; }
+.lb-stat { font-size: 14px; font-weight: 800; margin-left: 10px; }
+
+/* ---------- the shift ---------- */
+
+/* NEVER set `display` here. gk-base hides screens with `.screen{display:none}`
+   and reveals them with `.screen.active{display:flex}` — and an ID selector
+   outranks both, so `#screen-game{display:flex}` would pin the game screen
+   visible on top of every other screen forever, silently eating every tap on
+   the splash because the canvas is what is actually under the pointer.
+   gk-base already supplies flex-direction:column. */
+#screen-game {
+  padding: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+.game-bar { gap: 6px; }
+.game-bar .hud { font-size: 13px; }
+.game-bar .hud.coins { font-size: 16px; }
+
+/* The stage must fill what is left and be allowed to shrink — min-height:0 is
+   what lets a flex child with an absolutely-positioned canvas size correctly. */
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+#cv {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* ---------- results ---------- */
+
+.res-inner {
+  max-width: 420px;
+  margin: auto;
+  padding: 20px 18px calc(18px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.res-emoji { font-size: 58px; line-height: 1; }
+.res-title { margin: 4px 0 8px; font-size: 25px; }
+.res-stars { display: flex; gap: 6px; min-height: 46px; align-items: center; }
+.res-star {
+  font-size: 40px;
+  color: #ded5c4;
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  animation: pop .45s cubic-bezier(.2,1.6,.4,1);
+}
+.res-star.on { color: var(--sun); }
+@keyframes pop { 0% { transform: scale(0) rotate(-40deg); } 100% { transform: scale(1) rotate(0); } }
+.res-score {
+  font-size: 38px;
+  font-weight: 800;
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  color: var(--logo-a);
+}
+.res-stats { display: flex; flex-direction: column; gap: 3px; margin: 8px 0 4px; font-size: 15px; }
+.res-stats div:empty { display: none; }
+.res-next-star { font-size: 13.5px; margin: 4px 0 0; opacity: .85; }
+.res-next-star:empty { display: none; }
+.res-finished { font-size: 14px; margin: 8px 0 0; }
+.res-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; width: 100%; }
+.res-actions .btn { flex: 1 1 40%; margin: 0; }
+
+/* ---------- modals ---------- */
+
+/* gk-base styles `.sheet` (the markup gk-profiles and gk-pwa inject) and has NO
+   .modal-box rule at all, so a game that forgets this one gets dark ink on the
+   50% black scrim: 1.2:1, on exactly the sheets least likely to be opened
+   during testing. */
+.modal-box {
+  background: var(--paper);
+  border: 4px solid var(--ink);
+  border-radius: 18px;
+  width: min(92vw, 400px);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 16px;
+}
+.modal-box h3 { margin: 0 0 10px; font-size: 21px; }
+.modal-actions { display: flex; justify-content: center; margin: 8px 0; }
+
+.help-intro, .help-note { font-size: 13.5px; font-weight: 700; line-height: 1.4; margin: 0 0 10px; }
+.help-note { opacity: .88; }
+.help-steps { text-align: left; font-size: 14px; font-weight: 700; line-height: 1.45; padding-left: 22px; margin: 0 0 12px; }
+.help-steps li { margin-bottom: 6px; }
+
+/* today's shopping */
+.sl-shift { font-size: 15px; margin: 0 0 10px; }
+.sl-group { margin-bottom: 10px; text-align: left; }
+.sl-group h4 { margin: 0 0 4px; font-size: 13px; opacity: .75; text-transform: uppercase; letter-spacing: .5px; }
+.sl-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.sl-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 9px;
+  background: var(--page);
+  border: 2.5px solid var(--ink);
+  border-radius: 9px;
+}
+.sl-item i { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--ink); display: inline-block; }
+.sl-tip { font-size: 13.5px; font-weight: 700; margin: 10px 0 4px; }
+.sl-crowd { font-size: 13px; font-weight: 700; opacity: .75; margin: 0 0 10px; }
+
+.toast {
+  font-family: inherit;
+  font-weight: 800;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 12px;
+}
+
+/* Avatar grid: minmax(0, 1fr), never plain 1fr — an `auto` minimum will not let
+   a track shrink below its content and the last column spills out of the modal
+   on a narrow phone. */
+.avatar-grid { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+.avatar-choice { font-size: 24px; }
+
+@media (max-width: 340px) {
+  .logo { font-size: 34px; }
+  .trim-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sc-name { font-size: 9px; }
+}
