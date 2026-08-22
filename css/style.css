@@ -97,12 +97,14 @@ h1, h2, h3, h4 { font-weight: 800; letter-spacing: -.01em; }
 .btn.ghost:active { box-shadow: 0 0 0 #c9b99c, var(--shadow-s); }
 
 .btn.big { font-size: 21px; padding: 16px 28px; border-radius: 20px; }
-.btn.small { font-size: 14px; padding: 9px 14px; border-radius: 12px; box-shadow: 0 3px 0 var(--gold-ledge), var(--shadow-s); }
+.btn.small { font-size: 14px; padding: 9px 14px; min-height: 44px; border-radius: 12px; box-shadow: 0 3px 0 var(--gold-ledge), var(--shadow-s); }
 .btn.wide { width: 100%; }
 .btn:disabled { filter: saturate(.35) opacity(.6); box-shadow: 0 4px 0 rgba(0,0,0,.12), none; transform: none; }
 
 .icon-btn {
   font-family: inherit; font-size: 19px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px;
   color: var(--ink); border: 0; border-radius: 13px; padding: 8px 11px;
   background: linear-gradient(180deg, #fffdf8, #efe4cf);
   box-shadow: 0 3px 0 #c9b99c, var(--shadow-s);
@@ -158,60 +160,154 @@ h1, h2, h3, h4 { font-weight: 800; letter-spacing: -.01em; }
   font-size: 13px; font-weight: 700; color: var(--ink-2);
 }
 
-/* ---------- map ---------- */
+/* ---------- the tab shell ---------- */
 
+/* The four places she moves between are TABS now, not pages reached through a
+   back arrow. The bar and the tab bar are fixed furniture and only the middle
+   scrolls — which is the whole point: the shop used to disappear the moment she
+   scrolled past it, because it was a button halfway down a scrolling page.
+
+   Never set `display` on a #screen-* rule; gk-base hides screens with
+   `.screen{display:none}` and showing one is a class, not a display value. */
+#screen-map, #screen-shop, #screen-album, #screen-leaderboard { overflow: hidden; }
+#screen-profiles { overflow-y: auto; padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
+
+.tab-body {
+  flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding-bottom: 16px;
+}
+
+/* No back arrow on a tabbed screen, so the title starts at the left edge
+   rather than sitting off-centre in the space one used to occupy. */
+.bar h2:first-child { text-align: left; padding-left: 3px; }
+
+.tabbar {
+  flex: 0 0 auto; display: flex; gap: 4px;
+  padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+  background: var(--bone);
+  box-shadow: 0 -3px 16px rgba(74, 45, 16, .18);
+  position: relative; z-index: 5;
+}
+.tab {
+  flex: 1; font-family: inherit; border: 0; background: transparent;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 7px 2px 6px; border-radius: 14px;
+  font-size: 11px; font-weight: 800; line-height: 1; color: #5b4a36;
+  transition: background .14s ease, box-shadow .14s ease;
+}
+.tab .t-ic { font-size: 21px; line-height: 1; filter: grayscale(.85) opacity(.55); transition: filter .14s ease; }
+.tab.on {
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo));
+  box-shadow: 0 2px 0 var(--gold-ledge);
+}
+.tab.on .t-ic { filter: none; }
+.tab:active { transform: translateY(1px); }
+.tab:focus-visible { outline: 3px solid var(--wood); outline-offset: 2px; }
+
+/* ---------- the hero: one obvious thing to do ---------- */
+
+/* Nine times in ten she opens this to play the next shift, so that is the
+   biggest thing on the screen with the room previewed inside it — not the
+   fifth button down a list. */
 .map-player { flex: 1; font-size: 15px; display: flex; flex-direction: column; line-height: 1.15; color: #fdf3e0; }
 .map-stats { font-size: 13px; color: #e0cba9; }
-#screen-map, #screen-shop, #screen-leaderboard, #screen-profiles, #screen-album {
-  overflow-y: auto; padding-bottom: calc(22px + env(safe-area-inset-bottom));
-}
-.btn.continue { margin: 14px 16px 6px; }
-.map-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 12px; }
-.map-actions .btn { flex: 1 1 30%; margin: 0; font-size: 14px; padding: 11px 8px; border-radius: 13px; }
 
-.shift-list { padding: 0 14px; }
-
-/* A card of shelf, not a boxed-in sticker: bone panel, soft shadow, and the
-   week's colour as a band along the top rather than a black outline. */
-.week {
-  border-radius: 20px; background: var(--bone); margin-bottom: 14px;
-  overflow: hidden; box-shadow: var(--shadow-m);
+.hero {
+  margin: 13px 14px 0; border-radius: 22px; overflow: hidden;
+  background: linear-gradient(160deg, #7a4b23, #422e1f);
+  box-shadow: var(--shadow-l);
 }
-.week-head {
-  display: flex; align-items: center; gap: 10px; padding: 11px 14px;
-  background: linear-gradient(180deg, var(--week, var(--gold)) 0%, color-mix(in srgb, var(--week, var(--gold)) 78%, #7a5a2a) 100%);
+.hero-scene {
+  height: 106px; position: relative; overflow: hidden;
+  background: linear-gradient(180deg, #f9e8d0 0 57%, #d7a468 57%);
 }
-/* Ink lettering on every band: these hues are all light, and cream on them
-   measures 2-3:1 — legible only because of a text stroke, which is not
-   something to depend on. */
-.week-text { flex: 1; display: flex; flex-direction: column; line-height: 1.18; }
-.week-head h3 { margin: 0; font-size: 16px; color: #33261a; }
-.week-blurb { font-size: 11.5px; font-weight: 700; color: rgba(51, 38, 26, .78); }
-.week-icon { font-size: 22px; filter: drop-shadow(0 2px 3px rgba(74,45,16,.28)); }
-.week-tick { font-size: 18px; color: #33261a; }
-.week.done .week-head { filter: saturate(.6) brightness(1.04); }
+.hero-lamp { position: absolute; top: 0; width: 2px; height: 15px; background: #6b4523; }
+.hero-shade {
+  position: absolute; top: 13px; width: 28px; height: 14px; margin-left: -14px;
+  border-radius: 44% 44% 5px 5px / 82% 82% 5px 5px;
+  background: linear-gradient(180deg, #f7cd77, #d99a2f);
+}
+.hero-pool {
+  position: absolute; top: 25px; width: 82px; height: 48px; margin-left: -41px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 226, 156, .6), transparent);
+}
+.hero-face { position: absolute; bottom: 24px; width: 44px; height: 44px; margin-left: -22px; }
+.hero-tbl {
+  position: absolute; bottom: 11px; width: 54px; height: 21px; margin-left: -27px;
+  border-radius: 50%; background: var(--c); box-shadow: 0 3px 0 rgba(60, 34, 8, .22);
+}
 
-.shift-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 12px; }
-.shift-card {
-  font-family: inherit; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 11px 4px; min-height: 62px; justify-content: center;
-  border: 0; border-radius: 14px; color: var(--ink);
+.hero-body { padding: 12px 15px 14px; display: flex; align-items: flex-end; gap: 11px; }
+.hero-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hero-eyebrow {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: #f6e8cf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hero-name { font-size: 19px; font-weight: 800; line-height: 1.08; color: #fff6e4; }
+.hero-sub { font-size: 12px; font-weight: 700; color: #eddcc1; }
+.btn.hero-go { margin: 0; flex: none; font-size: 16px; padding: 12px 17px; border-radius: 15px; }
+
+/* ---------- the Saturday Rush ---------- */
+
+.rush-strip {
+  font-family: inherit; display: flex; align-items: center; gap: 11px; text-align: left;
+  width: calc(100% - 28px); margin: 11px 14px 0; padding: 11px 14px;
+  border: 0; border-radius: 17px;
+  background: linear-gradient(180deg, var(--sky-hi), var(--sky-lo));
+  box-shadow: 0 4px 0 var(--sky-ledge), var(--shadow-m);
+  transition: transform .07s ease, box-shadow .07s ease;
+}
+.rush-strip:active { transform: translateY(4px); box-shadow: 0 0 0 var(--sky-ledge), var(--shadow-s); }
+.rush-strip:disabled { filter: saturate(.3) opacity(.62); transform: none; }
+.rush-strip:focus-visible { outline: 3px solid var(--wood); outline-offset: 3px; }
+.rs-ic { font-size: 25px; line-height: 1; }
+.rs-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.18; }
+.rs-tx b { font-size: 15px; color: var(--sky-ink); }
+.rs-tx i { font-style: normal; font-size: 11.5px; font-weight: 700; color: #1c4354; }
+
+/* ---------- week rails ---------- */
+
+/* Weeks scroll sideways instead of stacking four-across, so a week reads as one
+   row you flick through and twenty shifts fit in two screens rather than five. */
+.rail-list { padding: 3px 0 0; }
+.rail { margin-top: 16px; }
+.rail-head { display: flex; align-items: center; gap: 8px; margin: 0 16px 7px; }
+.rail-bead {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: var(--week, var(--gold)); box-shadow: 0 0 0 2px rgba(255, 253, 248, .9);
+}
+.rail-icon { font-size: 19px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(74, 45, 16, .25)); }
+.rail-head h3 { margin: 0; font-size: 14.5px; min-width: 0; }
+.rail-count { margin-left: auto; font-size: 12px; font-weight: 800; white-space: nowrap; color: #6d5a45; }
+.rail.done .rail-count { color: #2c6f3c; }
+
+.chips {
+  display: flex; gap: 9px; padding: 3px 14px 9px;
+  overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+}
+.chips::-webkit-scrollbar { display: none; }
+
+.chip {
+  font-family: inherit; flex: 1 1 0; min-width: 72px; max-width: 116px; scroll-snap-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 5px 9px; border: 0; border-radius: 17px; color: var(--ink);
   background: linear-gradient(180deg, #fffdf8, #f0e6d3);
   box-shadow: 0 3px 0 #cdbc9e, var(--shadow-s);
   transition: transform .07s ease, box-shadow .07s ease;
 }
-.shift-card:active { transform: translateY(3px); box-shadow: 0 0 0 #cdbc9e; }
-.shift-card.next {
+.chip:active { transform: translateY(3px); box-shadow: 0 0 0 #cdbc9e; }
+.chip:focus-visible { outline: 3px solid var(--wood); outline-offset: 2px; }
+.chip.next {
   background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo));
-  box-shadow: 0 3px 0 var(--gold-ledge), 0 0 0 3px rgba(255, 212, 94, .35), var(--shadow-m);
-  animation: nudge 2s ease-in-out infinite;
+  box-shadow: 0 3px 0 var(--gold-ledge), 0 0 0 3px rgba(255, 212, 94, .4), var(--shadow-m);
 }
-@keyframes nudge { 50% { transform: translateY(-3px); } }
-.shift-card.big .sc-num { font-size: 19px; }
-.shift-card.locked { filter: saturate(.25) opacity(.55); box-shadow: 0 3px 0 #cdbc9e; transform: none; }
-.sc-num { font-size: 17px; font-weight: 800; }
-.sc-name { font-size: 10px; font-weight: 700; line-height: 1.15; text-align: center; color: var(--ink-2); }
-.sc-stars { font-size: 12px; color: #b8862a; letter-spacing: 1px; }
+.chip.locked { filter: saturate(.25) opacity(.55); box-shadow: 0 3px 0 #cdbc9e; transform: none; }
+.chip-num { font-size: 17px; font-weight: 800; line-height: 1; }
+.chip.big .chip-num { font-size: 19px; }
+.chip-name { font-size: 10px; font-weight: 700; line-height: 1.16; text-align: center; color: #5b4a36; min-height: 24px; }
+.chip-stars { font-size: 12px; letter-spacing: 1px; line-height: 1; color: #8a5f10; }
 
 /* ---------- shop ---------- */
 
@@ -222,7 +318,7 @@ h1, h2, h3, h4 { font-weight: 800; letter-spacing: -.01em; }
 }
 .si-icon { font-size: 30px; filter: drop-shadow(0 2px 3px rgba(74,45,16,.22)); }
 .si-text { flex: 1; display: flex; flex-direction: column; font-size: 14.5px; line-height: 1.28; }
-.si-pips { font-size: 12px; color: #b8862a; letter-spacing: 3px; }
+.si-pips { font-size: 12px; color: #8a5f10; letter-spacing: 3px; }
 .si-desc { font-size: 12px; font-weight: 700; color: var(--ink-2); }
 
 .trim-head, .album-head { margin: 20px 16px 2px; font-size: 17px; }
@@ -256,14 +352,16 @@ h1, h2, h3, h4 { font-weight: 800; letter-spacing: -.01em; }
 .reg-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .reg-text b { font-size: 15.5px; }
 .reg-blurb { font-size: 12.5px; font-weight: 700; color: var(--ink-2); line-height: 1.32; }
-.reg-breaks { font-size: 11.5px; font-weight: 700; color: #a86a2c; }
+.reg-breaks { font-size: 11.5px; font-weight: 700; color: #935920; }
 .reg-bar { height: 6px; border-radius: 4px; background: rgba(120, 92, 52, .16); overflow: hidden; margin-top: 4px; }
 .reg-bar i { display: block; height: 100%; background: linear-gradient(90deg, #a8dc95, #6aa757); }
 
 /* ---------- leaderboard ---------- */
 
 .lb-rows { padding: 8px 14px; }
-.lb-stat { font-size: 14px; font-weight: 800; margin-left: 10px; }
+/* No margin: gk-base already lays the row out as a grid with gap:10px, and the
+   extra 10px per stat pushed the last one off the right edge of a 320px phone. */
+.lb-stat { font-size: 14px; font-weight: 800; }
 
 /* ---------- the shift ---------- */
 
@@ -392,9 +490,13 @@ h1, h2, h3, h4 { font-weight: 800; letter-spacing: -.01em; }
 @media (max-width: 340px) {
   .logo { font-size: 35px; }
   .trim-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .sc-name { font-size: 9px; }
+  .chip { min-width: 64px; }
+  .chip-name { font-size: 9px; }
+  .hero-name { font-size: 17px; }
+  .btn.hero-go { font-size: 15px; padding: 11px 13px; }
+  .tab { font-size: 10px; }
   .d-tx b { font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .splash-cup, .shift-card.next { animation: none; }
+  .splash-cup { animation: none; }
 }

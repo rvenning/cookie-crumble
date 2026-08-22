@@ -25,6 +25,15 @@ const EXCUSES = {
   alreadyOn: "You're already on your way there.",
 };
 
+// The four places she can be. One registry, so the bar cannot drift out of step
+// with the screens it switches between.
+const TABS = [
+  { id: "map",         icon: "🫖", label: "Shifts",   go: "showMap" },
+  { id: "shop",        icon: "🛒", label: "Shop",     go: "showShop" },
+  { id: "album",       icon: "🦊", label: "Regulars", go: "showAlbum" },
+  { id: "leaderboard", icon: "🏆", label: "Board",    go: "showLeaderboard" },
+];
+
 const App = {
   profile: null, progress: null, kit: null,
   active: false, paused: false, lastTs: 0, token: 0,
@@ -89,7 +98,7 @@ const App = {
     this.showMap();
   },
 
-  /* ---------------- the map ---------------- */
+  /* ---------------- the shifts tab ---------------- */
 
   showMap() {
     this.progress = Storage.getProgress(this.profile.id);
@@ -100,43 +109,122 @@ const App = {
       `${this.profile.avatar} <b>${GK.util.esc(this.profile.name)}</b>` +
       `<span class="map-stats">⭐ ${Storage.totalStars(this.progress)} · 🪙 ${Storage.coins(this.progress)}</span>`;
 
-    const cont = document.getElementById("btn-continue");
-    cont.innerHTML = `▶️ Shift ${unlocked + 1} — ${GK.util.esc(SHIFTS[unlocked].name)}`;
-    cont.onclick = () => this.startShift(unlocked);
+    document.getElementById("hero").innerHTML = this.heroCard(unlocked);
+    document.getElementById("rush-strip").innerHTML = this.rushStrip();
 
-    const rush = document.getElementById("btn-rush");
-    const open = Storage.rushUnlocked(this.progress);
-    rush.disabled = !open;
-    rush.innerHTML = open
-      ? `⏱️ Saturday Rush${this.progress.rushScore ? ` — best ${this.progress.rushScore}` : ""}`
-      : `🔒 Saturday Rush (pass ${RUSH_UNLOCK_SHIFTS} shifts)`;
+    document.getElementById("shift-list").innerHTML =
+      WEEKS.map((week, wi) => this.weekRail(week, wi, unlocked)).join("");
 
-    document.getElementById("shift-list").innerHTML = WEEKS.map((week, wi) => {
-      const rows = shiftsInWeek(wi);
-      const done = rows.every(([, i]) => this.progress.shifts[i]);
-      return `<section class="week${done ? " done" : ""}" style="--week:${week.hue}">
-        <header class="week-head"><span class="week-icon">${week.icon}</span>
-          <div class="week-text"><h3>Week ${wi + 1} · ${GK.util.esc(week.name)}</h3>
-            <span class="week-blurb">${GK.util.esc(week.blurb)}</span></div>
-          ${done ? '<span class="week-tick">✔</span>' : ""}</header>
-        <div class="shift-row">${rows.map(([s, i]) => this.shiftCard(s, i, unlocked)).join("")}</div>
-      </section>`;
-    }).join("");
-
+    this.paintTabs("map");
     GK.UI.showScreen("map");
+    this.drawHeroFaces();
+    this.centreRails();
   },
 
-  shiftCard(s, i, unlocked) {
+  // Every tabbed screen paints the same bar, so there is no state to keep in
+  // step between them — only which one is lit.
+  paintTabs(active) {
+    const html = TABS.map((t) => `<button class="tab${t.id === active ? " on" : ""}"
+      ${t.id === active ? 'aria-current="page"' : ""} onclick="App.${t.go}()">
+      <span class="t-ic">${t.icon}</span><span class="t-tx">${t.label}</span></button>`).join("");
+    for (const bar of document.querySelectorAll(".tabbar")) bar.innerHTML = html;
+  },
+
+  // The card is a picture of THIS shift — today's guests and today's
+  // tablecloths — rather than a stock illustration that never changes.
+  heroCard(idx) {
+    const s = SHIFTS[idx];
+    const week = WEEKS[s.week];
+    const room = ROOMS[s.room];
+    const played = !!(this.progress.shifts || {})[idx];
+    // Two seats, filled cyclically: an early shift lists only one type of guest,
+    // and it really will be two regulars — not one regular and an empty chair.
+    const faces = [0, 1].map((k) => GUEST[s.types[k % s.types.length]].animal);
+    const cloths = room.cloths.slice(0, 3).map((c) => CLOTH[c].hex);
+
+    return `<section class="hero">
+      <div class="hero-scene" aria-hidden="true">
+        ${[20, 80].map((x) => `<i class="hero-lamp" style="left:${x}%"></i>
+          <i class="hero-shade" style="left:${x}%"></i>
+          <i class="hero-pool" style="left:${x}%"></i>`).join("")}
+        ${faces.map((a, k) => `<canvas class="hero-face" width="88" height="88"
+          data-animal="${a}" style="left:${20 + k * 60}%"></canvas>`).join("")}
+        ${cloths.map((hex, k) => `<i class="hero-tbl" style="left:${20 + k * 30}%;--c:${hex}"></i>`).join("")}
+      </div>
+      <div class="hero-body">
+        <div class="hero-txt">
+          <span class="hero-eyebrow">${played ? "Play again" : "Next shift"} · Week ${s.week + 1} · ${GK.util.esc(week.name)}</span>
+          <b class="hero-name">${idx + 1}. ${GK.util.esc(s.name)}</b>
+          <span class="hero-sub">${room.spots.length} tables · ${s.count} parties · ★ at ${s.target.toLocaleString()}</span>
+        </div>
+        <button class="btn hero-go" onclick="App.startShift(${idx})">${played ? "Again" : "Open up"}</button>
+      </div>
+    </section>`;
+  },
+
+  // Drawn with the same code the shift uses, so the guests on the card cannot
+  // drift from the ones who actually walk through the door.
+  drawHeroFaces() {
+    for (const el of document.querySelectorAll(".hero-face")) {
+      const c = el.getContext("2d");
+      c.clearRect(0, 0, el.width, el.height);
+      Render.ctx = c;
+      Render.animal(c, el.width / 2, el.height / 2 + 3, el.width / 3, el.dataset.animal);
+      Render.ctx = Render.cv.getContext("2d");
+    }
+  },
+
+  rushStrip() {
+    const open = Storage.rushUnlocked(this.progress);
+    const best = this.progress.rushScore || 0;
+    const line = !open ? `Pass ${RUSH_UNLOCK_SHIFTS} shifts to open up on Saturdays.`
+      : best ? `Your best takings: ${best.toLocaleString()}`
+      : "No closing time — how much can you take?";
+    return `<button class="rush-strip"${open ? "" : " disabled"} onclick="App.startRush()"
+      aria-label="Saturday Rush${open ? "" : ", locked"}">
+      <span class="rs-ic">${open ? "⏱️" : "🔒"}</span>
+      <span class="rs-tx"><b>Saturday Rush</b><i>${line}</i></span></button>`;
+  },
+
+  weekRail(week, wi, unlocked) {
+    const rows = shiftsInWeek(wi);
+    const shifts = this.progress.shifts || {};
+    const got = rows.reduce((n, [, i]) => n + (shifts[i] ? shifts[i].stars : 0), 0);
+    const done = rows.every(([, i]) => shifts[i]);
+    const locked = rows.every(([, i]) => i > unlocked);
+    return `<section class="rail${done ? " done" : ""}" style="--week:${week.hue}">
+      <div class="rail-head">
+        <i class="rail-bead"></i>
+        <span class="rail-icon">${locked ? "🔒" : week.icon}</span>
+        <h3>Week ${wi + 1} · ${GK.util.esc(week.name)}</h3>
+        <span class="rail-count">${locked ? "locked" : `${got} of ${rows.length * 3} ★`}</span>
+      </div>
+      <div class="chips">${rows.map(([s, i]) => this.shiftChip(s, i, unlocked)).join("")}</div>
+    </section>`;
+  },
+
+  shiftChip(s, i, unlocked) {
     const rec = (this.progress.shifts || {})[i];
     const locked = i > unlocked;
     const stars = rec ? rec.stars : 0;
     const pips = locked ? "🔒" : "★★★".slice(0, stars).padEnd(3, "☆");
-    return `<button class="shift-card${locked ? " locked" : ""}${i === unlocked ? " next" : ""}${s.big ? " big" : ""}"
+    return `<button class="chip${locked ? " locked" : ""}${i === unlocked ? " next" : ""}${s.big ? " big" : ""}"
       ${locked ? "disabled" : ""} onclick="App.startShift(${i})"
       aria-label="Shift ${i + 1}, ${GK.util.esc(s.name)}${locked ? ", locked" : `, ${stars} stars`}">
-      <span class="sc-num">${s.big ? "🎉" : i + 1}</span>
-      <span class="sc-name">${GK.util.esc(s.name)}</span>
-      <span class="sc-stars">${pips}</span></button>`;
+      <span class="chip-num">${s.big ? "🎉" : i + 1}</span>
+      <span class="chip-name">${GK.util.esc(s.name)}</span>
+      <span class="chip-stars">${pips}</span></button>`;
+  },
+
+  // Bring each week to its most interesting chip WITHOUT touching the vertical
+  // scroll — scrollIntoView would drag the hero off the top of the screen.
+  centreRails() {
+    for (const row of document.querySelectorAll(".chips")) {
+      const mark = row.querySelector(".chip.next")
+        || [...row.querySelectorAll(".chip:not(.locked)")].pop();
+      if (!mark) continue;
+      row.scrollLeft = Math.max(0, mark.offsetLeft - (row.clientWidth - mark.offsetWidth) / 2);
+    }
   },
 
   /* ---------------- opening up ---------------- */
@@ -320,7 +408,7 @@ const App = {
   },
 
   // A delayed screen change captures the token and re-checks it, or quitting
-  // inside the pause before the results screen yanks her out of the map and into
+  // inside the pause before the results screen yanks her out of the shifts tab and into
   // a shift she walked away from.
   later(fn, ms) { const t = this.token; setTimeout(() => { if (this.token === t) fn(); }, ms); },
 
@@ -443,6 +531,7 @@ const App = {
         <span class="tr-cost">${owned ? GK.util.esc(t.name) : `🪙 ${t.cost}`}</span></button>`;
     }).join("");
 
+    this.paintTabs("shop");
     GK.UI.showScreen("shop");
   },
 
@@ -481,6 +570,7 @@ const App = {
           <span class="reg-bar"><i style="width:${Math.min(100, (n / ALBUM_AT) * 100)}%"></i></span>
         </div></div>`;
     }).join("");
+    this.paintTabs("album");
     GK.UI.showScreen("album");
     // The faces are drawn with the same code the game uses, so a regular in the
     // album cannot drift from the one who walks through the door.
@@ -499,6 +589,7 @@ const App = {
       meId: this.profile && this.profile.id,
       empty: "No takings yet — play a Saturday Rush!",
     });
+    this.paintTabs("leaderboard");
     GK.UI.showScreen("leaderboard");
   },
 

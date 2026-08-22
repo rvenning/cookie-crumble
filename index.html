@@ -46,57 +46,61 @@
   <div class="profile-list" id="profile-list"></div>
 </div>
 
-<!-- The map: five weeks of four shifts -->
+<!-- Shifts: what is next, then every week as a side-scrolling rail -->
 <div class="screen" id="screen-map">
   <header class="bar">
-    <button class="icon-btn" onclick="App.play()">👥</button>
+    <button class="icon-btn" onclick="App.play()" aria-label="Switch baker">👥</button>
     <div class="map-player" id="map-player"></div>
-    <button class="icon-btn" onclick="App.showLeaderboard()">🏆</button>
+    <button class="icon-btn" onclick="App.showHelp()" aria-label="How to play">❓</button>
   </header>
-  <button class="btn big continue" id="btn-continue"></button>
-  <div class="map-actions">
-    <button class="btn blue" onclick="App.showShop()">🛒 The Shop</button>
-    <button class="btn blue" id="btn-rush" onclick="App.startRush()"></button>
-    <button class="btn blue" onclick="App.showAlbum()">🦊 Regulars</button>
-    <button class="btn blue" onclick="App.showHelp()">❓ How to Play</button>
+  <div class="tab-body">
+    <div id="hero"></div>
+    <div id="rush-strip"></div>
+    <div class="rail-list" id="shift-list"></div>
   </div>
-  <div class="shift-list" id="shift-list"></div>
+  <nav class="tabbar" aria-label="Tearoom"></nav>
 </div>
 
 <!-- The shop -->
 <div class="screen" id="screen-shop">
   <header class="bar">
-    <button class="icon-btn" onclick="App.showMap()">←</button>
     <h2>🛒 The Shop</h2>
     <span class="hud coins">🪙 <b id="shop-coins">0</b></span>
   </header>
-  <p class="screen-hint">Everything here buys you seconds — and nothing here is ever needed to serve an order.</p>
-  <div class="shop-list" id="upgrade-list"></div>
-  <h3 class="trim-head">🪟 Tearoom Trims <span id="trim-count"></span></h3>
-  <p class="screen-hint">Just for the look of the place. They go up in the room.</p>
-  <div class="trim-grid" id="trim-grid"></div>
+  <div class="tab-body">
+    <p class="screen-hint">Everything here buys you seconds — and nothing here is ever needed to serve an order.</p>
+    <div class="shop-list" id="upgrade-list"></div>
+    <h3 class="trim-head">🪟 Tearoom Trims <span id="trim-count"></span></h3>
+    <p class="screen-hint">Just for the look of the place. They go up in the room.</p>
+    <div class="trim-grid" id="trim-grid"></div>
+  </div>
+  <nav class="tabbar" aria-label="Tearoom"></nav>
 </div>
 
 <!-- The regulars -->
 <div class="screen" id="screen-album">
   <header class="bar">
-    <button class="icon-btn" onclick="App.showMap()">←</button>
     <h2>🦊 The Regulars</h2>
     <span class="hud" id="album-count"></span>
   </header>
-  <p class="screen-hint">Serve enough of somebody and you'll get to know them.</p>
-  <div class="album-list" id="album-list"></div>
+  <div class="tab-body">
+    <p class="screen-hint">Serve enough of somebody and you'll get to know them.</p>
+    <div class="album-list" id="album-list"></div>
+  </div>
+  <nav class="tabbar" aria-label="Tearoom"></nav>
 </div>
 
 <!-- Leaderboard -->
 <div class="screen" id="screen-leaderboard">
   <header class="bar">
-    <button class="icon-btn" onclick="App.showMap()">←</button>
     <h2>🏆 Family Leaderboard</h2>
     <button class="btn-sound icon-btn">🔊</button>
   </header>
-  <p class="screen-hint">Ranked by best takings in the Saturday Rush.</p>
-  <div class="lb-rows" id="lb-rows"></div>
+  <div class="tab-body">
+    <p class="screen-hint">Ranked by best takings in the Saturday Rush.</p>
+    <div class="lb-rows" id="lb-rows"></div>
+  </div>
+  <nav class="tabbar" aria-label="Tearoom"></nav>
 </div>
 
 <!-- The shift -->
@@ -132,7 +136,7 @@
     <p class="res-next-star" id="res-next-star"></p>
     <p class="res-finished" id="res-finished" style="display:none">👑 Twenty shifts and the Grand Re-Opening done! The tearoom is the talk of the village — now try the Saturday Rush for takings the family can chase.</p>
     <div class="res-actions">
-      <button class="btn ghost" onclick="App.showMap()">🗺️ Map</button>
+      <button class="btn ghost" onclick="App.showMap()">🫖 Shifts</button>
       <button class="btn" id="res-retry" style="display:none"></button>
       <button class="btn" id="res-next" style="display:none"></button>
     </div>
@@ -156,7 +160,7 @@
     <button class="btn green wide" onclick="App.resume()">▶️ Back to work</button>
     <button class="btn blue wide" onclick="App.showHelp()">❓ How to Play</button>
     <div class="modal-actions"><button class="btn-sound icon-btn">🔊</button></div>
-    <button class="btn grey wide" onclick="App.quit()">🗺️ Back to the map</button>
+    <button class="btn grey wide" onclick="App.quit()">🚪 Leave the shift</button>
   </div>
 </div>
 
