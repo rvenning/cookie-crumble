@@ -30,10 +30,14 @@ const CLOTH = Object.fromEntries(CLOTHS.map((c) => [c.id, c]));
 // collecting worth thinking about — when two tables want cake and one cake is
 // ready, you have to choose, and choosing is the game.
 const DISHES = [
-  { id: "tea",    name: "Tea",    station: "urn",   price: 8,  icon: "tea" },
-  { id: "scone",  name: "Scone",  station: "oven",  price: 11, icon: "scone" },
-  { id: "cookie", name: "Cookie", station: "oven",  price: 10, icon: "cookie" },
-  { id: "cake",   name: "Cake",   station: "icing", price: 15, icon: "cake" },
+  { id: "tea",      name: "Tea",      station: "urn",     price: 8,  icon: "tea" },
+  { id: "scone",    name: "Scone",    station: "oven",    price: 11, icon: "scone" },
+  { id: "cookie",   name: "Cookie",   station: "oven",    price: 10, icon: "cookie" },
+  { id: "cake",     name: "Cake",     station: "icing",   price: 15, icon: "cake" },
+  // Week 6. The oven is the bottleneck by then because it makes two of the four
+  // things on the menu; a fifth dish on a bench of its own is the one addition
+  // that adds capacity and pressure at the same time.
+  { id: "sandwich", name: "Sandwich", station: "counter", price: 13, icon: "sandwich" },
 ];
 const DISH = Object.fromEntries(DISHES.map((d) => [d.id, d]));
 
@@ -41,9 +45,10 @@ const DISH = Object.fromEntries(DISHES.map((d) => [d.id, d]));
 // the quiet second after a serve into a decision about what to put on next,
 // rather than dead air.
 const STATIONS = [
-  { id: "urn",   name: "Urn",   makes: "tea",               base: 3.0, icon: "🫖" },
-  { id: "oven",  name: "Oven",  makes: ["scone", "cookie"], base: 4.5, icon: "🔥" },
-  { id: "icing", name: "Icing", makes: "cake",              base: 4.0, icon: "🎂" },
+  { id: "urn",     name: "Urn",     makes: "tea",               base: 3.0, icon: "🫖" },
+  { id: "oven",    name: "Oven",    makes: ["scone", "cookie"], base: 4.5, icon: "🔥" },
+  { id: "icing",   name: "Icing",   makes: "cake",              base: 4.0, icon: "🎂" },
+  { id: "counter", name: "Counter", makes: "sandwich",          base: 3.6, icon: "🥪" },
 ];
 const STATION = Object.fromEntries(STATIONS.map((s) => [s.id, s]));
 
@@ -132,6 +137,35 @@ const GUESTS = [
     blurb: "Can't reach the counter. Has to be walked to her table personally.",
     breaks: "nothing — she just costs you a trip, and she's worth it",
   },
+
+  /* ---- week 6 onward. Each of these turns something that was a BONUS or a
+     background rule into a constraint you have to plan around. ---- */
+
+  {
+    // The colour match was free points you could ignore. For her it is the
+    // whole job: on the wrong cloth she runs down twice as fast.
+    id: "picky", name: "The particular cat", animal: "cat",
+    patience: 1.05, drain: 1.0, tip: 1.35, seats: 1, dishes: 1, picky: true,
+    blurb: "Has a colour in mind and it is not the one you were going to give her.",
+    breaks: "seating — the matching cloth stops being a bonus and starts being the point",
+  },
+  {
+    // Prickle's mirror, and the reason they are worth having in the same shift:
+    // one wants a table with nobody beside it, the other wants the opposite, and
+    // the room only has so many corners.
+    id: "shy", name: "The shy one", animal: "deer",
+    patience: 1.2, drain: 1.0, tip: 1.05, seats: 1, dishes: 1, shy: true,
+    blurb: "Doesn't want to be the only one in here. Sits happier beside somebody.",
+    breaks: "adjacency, backwards — an empty neighbouring table is what upsets him",
+  },
+  {
+    // Costs you four more jobs rather than just a table, which is what makes him
+    // different from the badgers: they are slow, he is more work.
+    id: "seconds", name: "Second helpings", animal: "frog",
+    patience: 1.25, drain: 0.9, tip: 1.15, seats: 1, dishes: 1, seconds: true,
+    blurb: "Finishes, thinks about it, and orders one more thing.",
+    breaks: "turnover — that table is not free when you think it is",
+  },
 ];
 const GUEST = Object.fromEntries(GUESTS.map((g) => [g.id, g]));
 
@@ -157,7 +191,10 @@ const SCORE = {
 // paid, so hurrying is a bonus rather than dawdling being a punishment.
 function payout(party, frac) {
   const g = GUEST[party.type];
-  const food = party.order.reduce((a, d) => a + DISH[d].price, 0);
+  // `eaten` holds earlier rounds — Second helpings pays for the lot, not just
+  // for whatever he happened to be on when you cleared him.
+  const all = party.eaten ? party.eaten.concat(party.order) : party.order;
+  const food = all.reduce((a, d) => a + DISH[d].price, 0);
   const tip = Math.round(food * 0.45 * Math.max(0, frac) * g.tip);
   return { coins: Math.round(food * g.tip) + tip, tip };
 }

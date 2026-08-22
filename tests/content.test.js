@@ -167,9 +167,23 @@ test("the shop climbs, changes something, and is affordable", () => {
 
   const shelf = UPGRADES.reduce((a, u) => a + u.costs.reduce((x, y) => x + y, 0), 0)
     + TRIMS.reduce((a, t) => a + t.cost, 0);
-  // tests/bot.test.js measures what a campaign actually pays; this only rules
-  // out a shelf nobody could ever clear.
-  assert.ok(shelf < 6000, `the whole shop costs ${shelf} coins`);
+
+  // Both bounds scale with the campaign, because a fixed number here is wrong
+  // the moment the campaign changes length — this was 6000, sized for twenty
+  // shifts, and doubling to forty made a perfectly good shelf fail.
+  //
+  // The progression bot in tests/bot.test.js measures around 430 coins a shift
+  // and is the real check that the shelf is clearable. These two only rule out
+  // the shapes that are obviously broken:
+  //
+  //   too dear  — a shelf nobody could clear by the end of the campaign
+  //   too cheap — a shelf that empties halfway, which is how the back half of a
+  //               forty-shift campaign ended up with a currency that did nothing
+  const perShift = shelf / SHIFTS.length;
+  assert.ok(perShift < 400,
+    `the whole shop costs ${shelf} coins — ${perShift.toFixed(0)} a shift, more than one pays`);
+  assert.ok(perShift > 180,
+    `the whole shop costs only ${shelf} coins — ${perShift.toFixed(0)} a shift, so it empties long before the campaign ends`);
 });
 
 test("a happy guest pays more than a fed-up one, and nobody pays nothing", () => {
@@ -199,4 +213,88 @@ test("a shift can actually be finished — every party resolves", () => {
     else if (Game.result.win) fails.push(`${i + 1}. ${s.name} was won by doing nothing`);
   }
   assert.deepEqual(fails, []);
+});
+
+/* ---------------- the week 6-10 additions ---------------- */
+
+test("every dish has a bench that makes it, and every bench makes something", () => {
+  const fails = [];
+  for (const d of DISHES) {
+    const st = STATION[d.station];
+    if (!st) { fails.push(`${d.id}: no bench called ${d.station}`); continue; }
+    const makes = Array.isArray(st.makes) ? st.makes : [st.makes];
+    if (!makes.includes(d.id)) fails.push(`${d.id}: the ${st.name} does not list it`);
+  }
+  for (const st of STATIONS) {
+    const makes = Array.isArray(st.makes) ? st.makes : [st.makes];
+    for (const m of makes) if (!DISH[m]) fails.push(`${st.name}: makes unknown dish ${m}`);
+  }
+  // A dish on today's menu with no bench on today's dock is an order that can
+  // never be filled, which the party-resolution test would only catch by hanging.
+  for (const s of SHIFTS) {
+    const benches = new Set(STATIONS
+      .filter((st) => (Array.isArray(st.makes) ? st.makes : [st.makes]).some((m) => s.dishes.includes(m)))
+      .map((st) => st.id));
+    for (const d of s.dishes)
+      if (!benches.has(DISH[d].station)) fails.push(`${s.name}: ${d} is on the menu with no bench for it`);
+  }
+  assert.deepEqual(fails, []);
+});
+
+test("every guest type earns its keep — each one turns up somewhere", () => {
+  const used = new Set(SHIFTS.flatMap((s) => s.types).concat(RUSH.types));
+  const orphans = GUESTS.filter((g) => !used.has(g.id)).map((g) => g.name);
+  assert.deepEqual(orphans, [],
+    `these types exist but never walk through a door: ${orphans.join(", ")}`);
+});
+
+test("the shy one can always be sat next to somebody", () => {
+  // He drains fast with no occupied table beside him, so a room where some table
+  // has NO neighbour at all is a seat that cannot be made right for him however
+  // well she plays. Derived from the geometry, not from a hand-kept list.
+  const fails = [];
+  const shyShifts = SHIFTS.filter((s) => s.types.includes("shy"))
+    .concat(RUSH.types.includes("shy") ? [{ name: "The Saturday Rush", room: RUSH.room }] : []);
+  for (const s of shyShifts) {
+    const spots = ROOMS[s.room].spots;
+    for (const a of spots) {
+      const near = spots.filter((b) => b !== a &&
+        Math.hypot(SPOTS[a].x - SPOTS[b].x, SPOTS[a].y - SPOTS[b].y) <= 170);
+      if (!near.length) fails.push(`${s.name}: table ${a} has no neighbour, so the deer can never be happy there`);
+    }
+  }
+  assert.deepEqual(fails, []);
+});
+
+test("a second round is exactly one more round, and it gets paid for", () => {
+  // The guard is a single flag on the table, so the failure mode to rule out is
+  // an endless diner: eat, order, eat, order, never reaching the bill.
+  const g = GUEST.seconds;
+  assert.ok(g && g.seconds, "the seconds guest is gone");
+
+  const rounds = [];
+  let guard = 0;
+  __reseed(4242);
+  const idx = SHIFTS.findIndex((s) => s.types.includes("seconds"));
+  assert.ok(idx >= 0, "nobody ever orders a second round");
+
+  Game.start({ mode: "shift", shiftIdx: idx, kit: upgradeLoadout({}) });
+  const seen = new Map();
+  while (Game.running && guard++ < 60000) {
+    Game.tick(1 / 30);
+    for (const t of Game.tables) {
+      if (!t.party || GUEST[t.party.type].id !== "seconds") continue;
+      const n = (t.party.eaten || []).length;
+      const prev = seen.get(t.party.id) || 0;
+      if (n > prev) { seen.set(t.party.id, n); rounds.push(n); }
+    }
+  }
+  assert.ok(guard < 60000, "a shift with second helpings in it never finished");
+  assert.ok(rounds.every((n) => n <= 1),
+    `somebody went round more than twice: ${rounds.filter((n) => n > 1).length} times`);
+
+  // And the money: two rounds must be worth more than one of the same dish.
+  const one = payout({ type: "seconds", order: ["tea"] }, 1).coins;
+  const two = payout({ type: "seconds", order: ["tea"], eaten: ["tea"] }, 1).coins;
+  assert.ok(two > one, `a second round paid ${two} against ${one} for one — it is not being counted`);
 });

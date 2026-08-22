@@ -11,12 +11,16 @@ this?", it is always "what do I do next, and what goes cold while I do it?"
 
 ## Features
 
-- **Twenty shifts across five weeks**, each ending on a Big Day — Saturday
-  Opening, the Village Fete, the Long Saturday, the Birthday Rush, and the Grand
-  Re-Opening.
+- **Forty shifts across ten weeks**, each ending on a Big Day — Saturday
+  Opening, the Village Fete, the Long Saturday, the Birthday Rush, the Grand
+  Re-Opening, Saturday Lunch, the Cat's Saturday, A Room Full of Opinions, the
+  Long Afternoon, and the Last Saturday. The room stops growing at six tables
+  after week three, so the back half earns its difficulty from content instead:
+  a fifth dish on a fourth bench, then three guests who each turn a background
+  rule into a constraint.
 - **Six taps and that's the game.** Seat, take the order, load your tray at the
-  pass, serve, clear (they settle up as you wipe down). Plus three benches — urn,
-  oven, icing — that cook while you're out on the floor.
+  pass, serve, clear (they settle up as you wipe down). Plus four benches — urn,
+  oven, icing and the sandwich counter — that cook while you're out on the floor.
 - **A floor that fills up.** Six tables in five different states at once, each
   running down a clock, and only one of you.
 - **Eight regulars, each breaking your routine in exactly one way** — the
@@ -52,7 +56,7 @@ No build step: plain `<script>` tags, in this order.
 | File | What it holds |
 |---|---|
 | `js/menu.js` | Dishes, the three benches, the eight guests, the five tablecloths |
-| `js/shifts.js` | The room's geometry, four floor plans, twenty shifts, the Rush |
+| `js/shifts.js` | The room's geometry, four floor plans, forty shifts, the Rush |
 | `js/upgrades.js` | The shop, and the kitchen a profile plays with |
 | `js/game.js` | The floor — no DOM, no canvas, no audio |
 | `js/storage.js` | Save shape and the cross-device merge |

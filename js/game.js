@@ -2,7 +2,7 @@
 //
 // No DOM, no canvas, no audio. render.js and tests/bot.test.js drive this file
 // through the same five tap methods, which is what lets the balance bots play
-// the real twenty-shift campaign with no browser open.
+// the real forty-shift campaign with no browser open.
 //
 // THE ONE IDEA: every job is trivial and takes one tap. What costs you is that
 // the server has to WALK there, and she can only be in one place. So the game is
@@ -86,7 +86,7 @@ const Game = {
     this.tables = this.room.spots.map((spot, i) => ({
       i, spot, x: SPOTS[spot].x, y: SPOTS[spot].y,
       cloth: this.room.cloths[i],
-      state: "free", party: null, wants: [], has: [], eatT: 0, clears: 0,
+      state: "free", party: null, wants: [], has: [], eatT: 0, clears: 0, again: false,
     }));
     this.queue = [];
     this.plan = this.mode === "rush" ? [] : this.dealParties();
@@ -437,6 +437,27 @@ const Game = {
       if (t.state !== "eating") continue;
       t.eatT -= dt;
       if (t.eatT > 0) continue;
+
+      // Second helpings goes back to a "?" rather than to the bill: one more
+      // order, taken and fetched and served like any other. What he has already
+      // had moves to `eaten` so he still pays for it, and `order` becomes just
+      // the new round — which keeps the one-trip bonus honest on round two.
+      //
+      // He gets some goodwill back with it. Without that the second round is
+      // simply a guest you cannot win, because his patience has been draining
+      // since the door and eating does not restore any of it.
+      const g = GUEST[t.party.type];
+      if (g.seconds && !t.again) {
+        const p = t.party;
+        t.again = true;
+        p.eaten = (p.eaten || []).concat(p.order);
+        p.order = [this.shift.dishes[Math.floor(this.rand() * this.shift.dishes.length)]];
+        p.patience = Math.min(p.patienceMax, p.patience + p.patienceMax * 0.5);
+        t.state = "seated"; t.wants = []; t.has = [];
+        this.emit("wantsMore", { table: t, party: p });
+        continue;
+      }
+
       t.state = "bill";
       this.emit("wantsToPay", { table: t });
     }
@@ -460,10 +481,18 @@ const Game = {
       if (rate === 0) continue;
       // Prickle makes his neighbours miserable.
       if (this.neighboursOf(t).some((o) => GUEST[o.party.type].prickly)) rate *= 2;
+      // The cat wanted the other cloth, and will not be letting it go.
+      // Measured at 2x this was nearly free: a decent player already matches
+      // cloths for the seating bonus, so she only ever landed wrong about a
+      // fifth of the time. Three makes that fifth actually cost something.
+      if (GUEST[p.type].picky && p.cloth !== t.cloth) rate *= 3;
+      // The deer does not want to be the only one in the room. Prickle's mirror:
+      // put them at the same end of the tearoom and one of them is always wrong.
+      if (GUEST[p.type].shy && !this.neighboursOf(t).length) rate *= 1.8;
       p.patience -= dt * rate * GUEST[p.type].drain;
       if (p.patience > 0) continue;
       const wasted = t.has.length;
-      t.party = null; t.state = "dirty"; t.clears = 1; t.wants = []; t.has = [];
+      t.party = null; t.state = "dirty"; t.clears = 1; t.wants = []; t.has = []; t.again = false;
       this.server.tasks = this.server.tasks.filter((k) => k.tableId !== t.i);
       this.wasted += wasted;
       this.giveUp(p, "table");
@@ -604,7 +633,7 @@ const Game = {
         this.coins += pay.coins;
         this.served++;
         this.award("clear", SCORE.PAY_BASE + (frac > 0.5 ? SCORE.PERFECT : 0));
-        t.party = null; t.has = []; t.clears--;
+        t.party = null; t.has = []; t.clears--; t.again = false;
         t.state = t.clears > 0 ? "dirty" : "free";
         this.emit("paid", { table: t, party: p, coins: pay.coins, tip: pay.tip, frac, happy: frac > 0.5,
                             stillDirty: t.state === "dirty" });

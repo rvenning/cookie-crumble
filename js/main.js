@@ -351,6 +351,15 @@ const App = {
         this.updateHud();
       },
 
+      // A table that goes back to a "?" on its own is the one event the room
+      // changes without her doing anything, so it has to announce itself —
+      // otherwise the frog just quietly runs out of patience behind her.
+      wantsMore: (d) => {
+        GK.Sfx.doorbell();
+        const p = Render.centreOf(`t${d.table.i}`);
+        Render.pop(p.x, p.y - 40, "another, please!", "#ffe08a");
+      },
+
       cleared: () => GK.Sfx.wipe(),
       stillDirty: () => { GK.Sfx.wipe(); GK.UI.toast("Crumbs everywhere — give it another wipe."); },
       refused: () => { GK.Sfx.nope(); GK.UI.toast("That's not what they ordered. 🙂"); },

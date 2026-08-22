@@ -14,22 +14,22 @@ const UPGRADES = [
   {
     id: "shoes", icon: "👟", name: "Comfy Shoes",
     desc: "Get across the room quicker. The best coins you'll spend.",
-    costs: [90, 220, 420],
+    costs: [90, 220, 420, 820],
   },
   {
     id: "tray", icon: "🍽️", name: "Bigger Tray",
     desc: "Carry more plates at once, so one trip does two tables.",
-    costs: [140, 340],
+    costs: [140, 340, 780],
   },
   {
     id: "chairs", icon: "🪑", name: "Softer Chairs",
     desc: "Everyone waits a little longer without minding.",
-    costs: [80, 190, 380],
+    costs: [80, 190, 380, 740],
   },
   {
     id: "kitchen", icon: "🔥", name: "Better Kitchen",
-    desc: "The urn, the oven and the icing bench all work faster.",
-    costs: [120, 280, 520],
+    desc: "Every bench works faster — the urn, the oven, the icing and the counter.",
+    costs: [120, 280, 520, 1000],
   },
   {
     id: "podium", icon: "🪧", name: "Front Podium",
@@ -39,7 +39,7 @@ const UPGRADES = [
   {
     id: "mop", icon: "🧽", name: "A Proper Mop",
     desc: "Clear a table in half the time. The twins will test this.",
-    costs: [70, 170],
+    costs: [70, 170, 400],
   },
 ];
 
@@ -59,6 +59,14 @@ const TRIMS = [
   { id: "birds",    icon: "🐦", name: "Birdcage",      cost: 120 },
   { id: "lamps",    icon: "🏮", name: "Paper Lanterns", cost: 150 },
   { id: "trophy",   icon: "🏆", name: "Tearoom of the Year", cost: 220 },
+  // Week 6 onward. By then a shift pays around 500, so these are worth saving
+  // for rather than picking up on the way past.
+  { id: "curtains", icon: "🪟", name: "Lace Curtains",  cost: 300 },
+  { id: "piano",    icon: "🎹", name: "Corner Piano",   cost: 420 },
+  { id: "candles",  icon: "🕯️", name: "Candlesticks",   cost: 560 },
+  { id: "mirror",   icon: "🪞", name: "Gilt Mirror",    cost: 720 },
+  { id: "boxes",    icon: "🌷", name: "Window Boxes",   cost: 900 },
+  { id: "bell",     icon: "🛎️", name: "Brass Counter Bell", cost: 1200 },
 ];
 
 // The kitchen a brand-new player runs. Every shift is tuned against exactly this.

@@ -28,6 +28,8 @@ const FUR = {
   frog:     { coat: "#8fcf70", ear: "#7fbf62", tip: "#fdfbf6", muzzle: "#a8dd8c", shape: "eyes" },
   owl:      { coat: "#c9975a", ear: "#b98a4e", tip: "#e8cfa4", muzzle: "#e8cfa4", shape: "point" },
   squirrel: { coat: "#cf8b52", ear: "#c07a45", tip: "#f2ddc2", muzzle: "#f2ddc2", shape: "point" },
+  cat:      { coat: "#8d8f9c", ear: "#7c7e8b", tip: "#f0c3c9", muzzle: "#e8e9ee", shape: "point" },
+  deer:     { coat: "#c98f63", ear: "#b87f55", tip: "#f2ddc2", muzzle: "#f6ece0", shape: "long" },
 };
 
 const Render = {
@@ -408,6 +410,13 @@ const Render = {
     }
     if (this.trims.trophy) { c.font = "16px system-ui"; c.textAlign = "center"; c.fillText("🏆", 340, 130); }
     if (this.trims.birds) { c.font = "16px system-ui"; c.textAlign = "center"; c.fillText("🐦", 300, 40); }
+    c.textAlign = "center"; c.textBaseline = "middle";
+    if (this.trims.curtains) { c.font = "19px system-ui"; c.fillText("🪟", 60, 55); }
+    if (this.trims.boxes)    { c.font = "15px system-ui"; c.fillText("🌷", 340, 68); }
+    if (this.trims.candles)  { c.font = "15px system-ui"; c.fillText("🕯️", 60, 130); }
+    if (this.trims.mirror)   { c.font = "17px system-ui"; c.fillText("🪞", 240, 130); }
+    if (this.trims.piano)    { c.font = "21px system-ui"; c.fillText("🎹", 30, 300); }
+    if (this.trims.bell)     { c.font = "15px system-ui"; c.fillText("🛎️", 335, 320); }
   },
 
   doorway(c) {
@@ -741,6 +750,24 @@ const Render = {
       c.quadraticCurveTo(x, y - r * 1.0, x + r * 0.85, y + r * 0.35); c.closePath(); c.fill();
       c.fillStyle = "#f6efe2"; this.round(c, x - r * 0.9, y + r * 0.25, r * 1.8, r * 0.34, r * 0.16); c.fill();
       c.fillStyle = "#e3b678"; this.round(c, x - r * 0.9, y + r * 0.52, r * 1.8, r * 0.32, r * 0.14); c.fill();
+    } else if (d.icon === "sandwich") {
+      for (const sx of [-1, 1]) {
+        const bx = x + sx * r * 0.42;
+        c.fillStyle = "#f0d9a8";
+        c.beginPath();
+        c.moveTo(bx - sx * r * 0.5, y + r * 0.55);
+        c.lineTo(bx + sx * r * 0.5, y + r * 0.55);
+        c.lineTo(bx + sx * r * 0.5, y - r * 0.5);
+        c.closePath(); c.fill();
+        c.fillStyle = "#7fbf62";                       // a leaf hanging out of it
+        c.fillRect(bx - sx * r * 0.46, y + r * 0.06, sx * r * 0.92, r * 0.2);
+        c.fillStyle = "#e0b070";                       // crust along the top edge
+        c.beginPath();
+        c.moveTo(bx - sx * r * 0.5, y + r * 0.55);
+        c.lineTo(bx + sx * r * 0.5, y - r * 0.5);
+        c.lineTo(bx + sx * r * 0.5, y - r * 0.24);
+        c.closePath(); c.fill();
+      }
     } else {
       c.fillStyle = "#d99a52"; c.beginPath(); c.arc(x, y, r * 0.92, 0, 7); c.fill();
       c.fillStyle = "#5b3a24";

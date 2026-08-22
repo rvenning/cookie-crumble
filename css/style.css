@@ -404,7 +404,7 @@ h1, h2, h3, h4 { font-weight: 800; letter-spacing: -.01em; }
 }
 .dockbtn {
   font-family: inherit; flex: 1; display: flex; align-items: center; gap: 7px;
-  padding: 8px 9px; min-width: 0; position: relative; overflow: hidden;
+  padding: 8px 9px; min-width: 0; min-height: 44px; position: relative; overflow: hidden;
   border: 0; border-radius: 14px; color: var(--ink);
   background: linear-gradient(180deg, #fffdf8, #f0e0c2);
   box-shadow: 0 4px 0 #b79b73, var(--shadow-s);
