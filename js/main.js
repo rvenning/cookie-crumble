@@ -58,7 +58,13 @@ const App = {
     });
 
     GK.initPWA({ appName: "Cookie Crumble" });
+
+    // Restore the mute BEFORE the speaker button paints itself from it,
+    // otherwise a muted game comes back showing a hopeful loudspeaker.
+    GK.Sfx.enabled = Storage.getSettings().sound !== false;
     GK.UI.bindSoundToggle(Storage);
+    // Every menu button clicks; buttons that make their own sound keep it.
+    GK.UI.bindMenuClicks();
 
     Storage.initFirebase().then((live) => {
       const b = document.getElementById("sync-badge");
